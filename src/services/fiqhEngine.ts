@@ -315,12 +315,28 @@ export function determineStatus(
   else if (category === "Mutahayyiroh (Lupa Adat)") shortCategory = "ISTIHADLOH (MU'TADAH GHOIRU MUMAYYIZAH NASIYAH LI'ADATIHA QODRON WA WAQTAN / MUTAHAYYIROH)";
 
   analysis = `Total rangkaian darah Anda adalah ${statusTimeline.length} hari. Berdasarkan kaidah ${category}, masa tersebut dibagi menjadi: `;
+  
   const parts = [];
   if (haidCount > 0) parts.push(`${haidCount} hari dihukumi HAIDL`);
   if (nifasCount > 0) parts.push(`${nifasCount} hari dihukumi NIFAS`);
   if (istihadlohCount > 0) parts.push(`${istihadlohCount} hari dihukumi ISTIHADLOH`);
   if (ihtiyathCount > 0) parts.push(`${ihtiyathCount} hari dihukumi IHTIYATH`);
+  
+  // Menambahkan Alasan Logis
+  const alasanLogisMap: Record<string, string> = {
+    "Haidl Normal": "Darah Anda keluar dalam rentang waktu yang wajar dan mencapai syarat minimal, sehingga seluruh darah dan masa jeda di antaranya dihukumi sebagai darah haid berdasarkan kaidah Jam'u.",
+    "Nifas Normal": "Darah Anda keluar dalam rentang waktu yang wajar, sehingga seluruh darah dan masa jeda di antaranya dihukumi sebagai darah nifas.",
+    "Mubtadi'ah Mumayyizah": "Darah Anda memiliki perbedaan kualitas (kuat/lemah) yang memenuhi syarat Tamyiz, sehingga darah yang kuat dihukumi haid dan yang lemah dihukumi istihadloh.",
+    "Mubtadi'ah Ghoiru Mumayyizah": "Darah tidak memiliki perbedaan kualitas yang memenuhi syarat Tamyiz, maka berdasarkan kaidah Mubtadi'ah Ghoiru Mumayyizah, hari pertama dihukumi haid dan sisanya istihadloh.",
+    "Mu'tadah Mumayyizah": "Darah Anda memiliki perbedaan kualitas (kuat/lemah) yang memenuhi syarat Tamyiz, sehingga darah yang kuat dihukumi haid dan yang lemah dihukumi istihadloh.",
+    "Mu'tadah Ghoiru Mumayyizah Dzakiroh": "Anda ingat durasi adat haid Anda sebelumnya, maka masa haid ditetapkan berdasarkan durasi adat tersebut, sisanya dihukumi istihadloh.",
+    "Mutahayyiroh (Lupa Adat)": "Karena Anda lupa durasi maupun waktu adat haid, maka hukumnya adalah Mutahayyiroh: wajib bersikap ihtiyath (berhati-hati) dengan menanggung konsekuensi ibadah maksimal."
+  };
+
   analysis += (parts.length > 0 ? parts.join(', ') : "Suci") + ". ";
+  if (alasanLogisMap[category]) {
+    analysis += `\n\nAlasan logis: ${alasanLogisMap[category]}`;
+  }
 
   if (isTerputus) {
     analysis += "Karena darah Anda keluar secara terputus-putus (terdapat hari di mana darah berhenti), maka sistem menerapkan kaidah Jam'u/Talfiq. ";

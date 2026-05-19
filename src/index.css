@@ -60,3 +60,21 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   cursor: pointer;
 }
 
+.article-content p {
+  margin-bottom: 1.2rem;
+}
+
+.article-content strong,
+.article-content b {
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+.article-content h1,
+.article-content h2,
+.article-content h3 {
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  font-weight: 700;
+}
+

@@ -80,5 +80,7 @@ export interface FiqhAnalysisResult {
   qadhoObligations: string[];
   totalQodloPuasa?: number;
   specialNotes?: string[];
+  langkahSelanjutnyaTeks?: string;
+  isFirstMonth?: boolean;
   legalBasis: string;
 }

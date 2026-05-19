@@ -1,4 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Routes, Route, Link, useLocation } from 'react-router-dom';
+import Header from './components/Header';
+import ArticleList from './components/articles/ArticleList';
+import ArticleDetail from './components/articles/ArticleDetail';
+import ArticleEditor from './components/articles/ArticleEditor';
+import AdminAuth from './components/AdminAuth';
 import { 
   Calendar, 
   ChevronRight, 
@@ -24,7 +30,6 @@ import {
   Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useEffect, useMemo } from 'react';
 import { 
   format, 
   addDays, 
@@ -57,8 +62,10 @@ import {
   BloodAroma
 } from './types';
 import { analyzeFiqh } from './services/geminiService';
+import { calculateHijriAge } from './lib/hijriUtils';
 
 export default function App() {
+  const location = useLocation();
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<FiqhAnalysisResult | null>(null);
@@ -67,6 +74,7 @@ export default function App() {
   const [isQodloOpen, setIsQodloOpen] = useState(false);
 
   // Step 1: Profil Dasar
+  const [birthDateMasehi, setBirthDateMasehi] = useState('');
   const [ageYears, setAgeYears] = useState(20);
   const [ageMonths, setAgeMonths] = useState(0);
   const [ageDays, setAgeDays] = useState(0);
@@ -203,8 +211,14 @@ export default function App() {
   const renderStepNav = () => (
     <div className="space-y-6">
       {steps.filter(s => s.id < 5).map((s, idx) => (
-        <div key={s.id} className={cn(
-          "flex items-center gap-3 transition-colors",
+        <button 
+          key={s.id} 
+          onClick={() => {
+            setStep(s.id);
+            setIsSidebarOpen(false);
+          }}
+          className={cn(
+          "flex items-center gap-3 transition-colors w-full",
           step === s.id ? "text-accent" : (step > s.id ? "text-text-contrast/80" : "text-slate-500")
         )}>
           <div className={cn(
@@ -214,7 +228,7 @@ export default function App() {
             {(idx + 1).toString().padStart(2, '0')}
           </div>
           <span className="text-xs font-semibold uppercase tracking-wider">{s.name}</span>
-        </div>
+        </button>
       ))}
     </div>
   );
@@ -222,36 +236,27 @@ export default function App() {
   const renderStep1 = () => (
     <div className="space-y-6 md:space-y-8">
       <div className="space-y-4">
-        <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">Usia Anda (Hijriyah)</h3>
-        <div className="grid grid-cols-3 gap-3 md:gap-6">
-          <div className="space-y-2">
-            <label className="text-xs text-slate-400 uppercase">Thn</label>
-            <input 
-              type="number" 
-              value={ageYears || ''} 
-              onChange={e => setAgeYears(e.target.value === '' ? 0 : parseInt(e.target.value) || 0)}
-              className="w-full bg-bg-card border border-border-main p-2.5 md:p-3 rounded-lg text-sm text-text-contrast focus:outline-none focus:border-accent"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-xs text-slate-400 uppercase">Bln</label>
-            <input 
-              type="number" 
-              value={ageMonths || ''} 
-              onChange={e => setAgeMonths(e.target.value === '' ? 0 : parseInt(e.target.value) || 0)}
-              className="w-full bg-bg-card border border-border-main p-2.5 md:p-3 rounded-lg text-sm text-text-contrast focus:outline-none focus:border-accent"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-xs text-slate-400 uppercase">Hari</label>
-            <input 
-              type="number" 
-              value={ageDays || ''} 
-              onChange={e => setAgeDays(e.target.value === '' ? 0 : parseInt(e.target.value) || 0)}
-              className="w-full bg-bg-card border border-border-main p-2.5 md:p-3 rounded-lg text-sm text-text-contrast focus:outline-none focus:border-accent"
-            />
-          </div>
+        <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">TANGGAL LAHIR</h3>
+        <input 
+            type="date"
+            value={birthDateMasehi}
+            onChange={e => {
+                const date = e.target.value;
+                setBirthDateMasehi(date);
+                if (date) {
+                    const age = calculateHijriAge(date);
+                    setAgeYears(age.years);
+                    setAgeMonths(age.months);
+                    setAgeDays(age.days);
+                }
+            }}
+            max={new Date().toISOString().split('T')[0]}
+            className="w-full bg-bg-card border border-border-main p-2.5 md:p-3 rounded-lg text-sm text-text-contrast focus:outline-none focus:border-accent"
+        />
+        <div className="p-3 bg-accent/10 border border-accent/20 rounded-lg text-sm text-text-contrast font-bold italic">
+           Usia Hijriyah Anda: {ageYears} Tahun, {ageMonths} Bulan, {ageDays} Hari
         </div>
+        
         {ageYears < 9 && (
           <div className="p-3 bg-red-950/20 border border-red-900/50 rounded-lg flex gap-3 text-[10px] text-red-400 italic">
             <AlertCircle className="w-3 h-3 flex-shrink-0" />
@@ -1564,15 +1569,14 @@ export default function App() {
               <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.3em]">Langkah Selanjutnya</h3>
               <Droplet className="w-4 h-4 text-accent/40" />
            </div>
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {result?.purificationInstructions.map((item, i) => (
-                <div key={i} className="flex gap-6 items-center p-6 bg-bg-main rounded-2xl border border-border-main/50 group hover:border-accent/30 transition-colors">
-                  <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center text-xs font-black text-accent shrink-0 group-hover:bg-accent group-hover:text-bg-main transition-colors">
-                    {i + 1}
-                  </div>
-                  <p className="text-xs text-slate-300 leading-relaxed font-medium uppercase tracking-tight">{item}</p>
-                </div>
-              ))}
+           
+           <div className="p-6 bg-accent/10 border border-accent/20 rounded-2xl">
+              <p className="text-xs text-text-contrast leading-relaxed font-medium">
+                {isFirstMonthIstihadloh 
+                  ? "Masa Penantian 15 Hari telah berakhir. Mulai hari ini, Anda WAJIB MANDI BESAR (Janabah) dan status Anda resmi menjadi wanita Mustahadloh (Suci). Anda WAJIB melaksanakan sholat fardlu dan puasa tepat waktu (dengan tata cara bersuci khusus Mustahadloh). Jika ibadah di hari-hari ini terlanjur Anda tinggalkan, maka wajib diqodlo."
+                  : "Mandi wajib (janabah) disesuaikan dengan kategori Anda (tepat di saat karakter darah berubah untuk Mumayyizah, atau setelah hari adat selesai untuk Ghoiru Mumayyizah)." 
+                }
+              </p>
            </div>
         </div>
       </div>
@@ -1611,39 +1615,57 @@ export default function App() {
           <p className="text-xs uppercase tracking-[0.3em] text-slate-500 font-black opacity-70">Fiqh Darah AI</p>
         </div>
 
-        <nav className="flex-1 px-8 py-10 space-y-8 overflow-y-auto custom-scrollbar">
-          <div className="md:hidden mb-8 border-b border-border-main pb-4">
-             <p className="text-xs uppercase tracking-[0.3em] text-slate-500 font-black opacity-70">Navigation</p>
-          </div>
-          
-          {renderStepNav()}
+        <div className="flex-1 overflow-y-auto flex flex-col custom-scrollbar">
+          <nav className="flex-1 px-8 py-10 space-y-8">
+            <div className="md:hidden mb-8 border-b border-border-main pb-4">
+               <p className="text-xs uppercase tracking-[0.3em] text-slate-500 font-black opacity-70">Navigation</p>
+            </div>
+            
+            {!location.pathname.startsWith('/articles') && renderStepNav()}
+            
+            <Link 
+              to="/articles"
+              onClick={() => setIsSidebarOpen(false)}
+              className={cn(
+                "flex items-center gap-3 transition-colors",
+                location.pathname === '/articles' ? "text-accent" : "text-slate-500 hover:text-text-contrast"
+              )}
+            >
+              <FileText className="w-5 h-5" />
+              <span className="text-xs font-semibold uppercase tracking-wider">Artikel Fiqh</span>
+            </Link>
 
-          <div className="pt-10 border-t border-border-main space-y-6">
-            <div className="text-xs text-slate-500 uppercase font-black tracking-widest">Live Profile</div>
-            <div className="grid grid-cols-1 gap-3">
-              <div className="bg-bg-card p-3 rounded border border-border-main/50">
-                <div className="text-[9px] text-slate-500 uppercase font-bold mb-1">Context</div>
-                <div className="text-[10px] font-mono text-text-contrast flex justify-between items-center">
-                  <span>{context.toUpperCase()}</span>
-                  <div className={cn("w-1.5 h-1.5 rounded-full animate-pulse", context === 'haid' ? "bg-red-500" : "bg-purple-500")} />
+            <div className="mt-auto">
+              <AdminAuth />
+            </div>
+
+            <div className="pt-10 border-t border-border-main space-y-6">
+              <div className="text-xs text-slate-500 uppercase font-black tracking-widest">Live Profile</div>
+              <div className="grid grid-cols-1 gap-3">
+                <div className="bg-bg-card p-3 rounded border border-border-main/50">
+                  <div className="text-[9px] text-slate-500 uppercase font-bold mb-1">Context</div>
+                  <div className="text-[10px] font-mono text-text-contrast flex justify-between items-center">
+                    <span>{context.toUpperCase()}</span>
+                    <div className={cn("w-1.5 h-1.5 rounded-full animate-pulse", context === 'haid' ? "bg-red-500" : "bg-purple-500")} />
+                  </div>
+                </div>
+                <div className="bg-bg-card p-3 rounded border border-border-main/50">
+                  <div className="text-[9px] text-slate-500 uppercase font-bold mb-1">Experience</div>
+                  <div className="text-[10px] font-mono text-text-contrast truncate">{experience.toUpperCase()}</div>
                 </div>
               </div>
-              <div className="bg-bg-card p-3 rounded border border-border-main/50">
-                <div className="text-[9px] text-slate-500 uppercase font-bold mb-1">Experience</div>
-                <div className="text-[10px] font-mono text-text-contrast truncate">{experience.toUpperCase()}</div>
-              </div>
             </div>
-          </div>
-        </nav>
+          </nav>
 
-        <div className="p-8 bg-bg-bottom border-t border-border-main">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-2 h-2 rounded-full bg-accent" />
-            <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Mazhab Syafi'i</span>
+          <div className="p-8 bg-bg-bottom border-t border-border-main">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-2 h-2 rounded-full bg-accent" />
+              <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Mazhab Syafi'i</span>
+            </div>
+            <p className="text-[9px] leading-relaxed italic text-slate-500 font-serif opacity-80 uppercase tracking-tighter">
+              Uyunul Masa-il Linnisa & Panduan Tamyiz Terpadu
+            </p>
           </div>
-          <p className="text-[9px] leading-relaxed italic text-slate-500 font-serif opacity-80 uppercase tracking-tighter">
-            Uyunul Masa-il Linnisa & Panduan Tamyiz Terpadu
-          </p>
         </div>
 
         {/* Close overlay for mobile */}
@@ -1657,20 +1679,20 @@ export default function App() {
 
       {/* MAIN INTERACTION AREA */}
       <main className="flex-1 flex flex-col overflow-hidden bg-bg-main relative">
-        <header className="h-20 md:h-24 border-b border-border-main flex items-center justify-between px-6 md:px-12 bg-bg-main/50 backdrop-blur-md sticky top-0 z-10">
-          <div className="flex-1">
-            <h2 className="text-lg md:text-xl font-serif tracking-tight">{currentStep.name}</h2>
-            <p className="text-[9px] md:text-[10px] text-slate-500 uppercase tracking-widest mt-1 hidden sm:block">{currentStep.description}</p>
-          </div>
-          <div className="flex gap-2 md:gap-4 ml-4">
-            <button 
+        <Header 
+          onMenuClick={() => setIsSidebarOpen(true)}
+          title={location.pathname.startsWith('/articles') ? 'Artikel Fiqh' : currentStep.name}
+          description={!location.pathname.startsWith('/articles') ? currentStep.description : undefined}
+          showBack={location.pathname !== '/'}
+        >
+          <button 
               onClick={toggleTheme}
               className="p-2 md:p-2.5 border border-border-main text-slate-500 hover:text-text-contrast rounded hover:bg-bg-card transition-colors"
             >
               {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
 
-            {step > 1 && step < 5 && (
+            {step > 1 && step < 5 && !location.pathname.startsWith('/articles') && (
               <button 
                 onClick={() => {
                   const prevStep = allSteps
@@ -1684,7 +1706,7 @@ export default function App() {
               </button>
             )}
             
-            {step < 5 ? (
+            {step < 5 && !location.pathname.startsWith('/articles') ? (
               <button 
                 disabled={isLoading}
                 onClick={step === 4 ? handleAnalyze : () => {
@@ -1701,7 +1723,7 @@ export default function App() {
                 <span className="whitespace-nowrap">{step === 4 ? "Analyze" : "Continue"}</span>
                 {!isLoading && <ChevronRight className="w-3 h-3" />}
               </button>
-            ) : (
+            ) : !location.pathname.startsWith('/articles') && (
               <button 
                 className="px-4 md:px-6 py-2 md:py-2.5 bg-accent/10 text-accent border border-accent/30 text-[9px] md:text-[10px] uppercase font-bold tracking-widest rounded flex items-center gap-2"
                 onClick={() => window.print()}
@@ -1709,26 +1731,33 @@ export default function App() {
                 <Save className="w-3 h-3" /> <span className="hidden sm:inline">PDF</span>
               </button>
             )}
-          </div>
-        </header>
+        </Header>
 
         <section className="flex-1 overflow-y-auto p-6 md:p-12 custom-scrollbar">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={step}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={{ duration: 0.3, ease: "easeOut" }}
-              className="max-w-4xl mx-auto md:mx-0"
-            >
-              {step === 1 && renderStep1()}
-              {step === 2 && renderStep2()}
-              {step === 3 && renderStep3()}
-              {step === 4 && renderStep4()}
-              {step === 5 && renderResult()}
-            </motion.div>
-          </AnimatePresence>
+          <Routes>
+            <Route path="/articles" element={<ArticleList />} />
+            <Route path="/articles/:id" element={<ArticleDetail />} />
+            <Route path="/articles/new" element={<ArticleEditor />} />
+            <Route path="/articles/edit/:id" element={<ArticleEditor />} />
+            <Route path="/" element={
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={step}
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.3, ease: "easeOut" }}
+                  className="max-w-4xl mx-auto md:mx-0"
+                >
+                  {step === 1 && renderStep1()}
+                  {step === 2 && renderStep2()}
+                  {step === 3 && renderStep3()}
+                  {step === 4 && renderStep4()}
+                  {step === 5 && renderResult()}
+                </motion.div>
+              </AnimatePresence>
+            } />
+          </Routes>
         </section>
       </main>
 

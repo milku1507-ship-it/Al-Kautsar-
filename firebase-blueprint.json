@@ -1,0 +1,24 @@
+{
+  "entities": {
+    "article": {
+      "title": "Article",
+      "description": "An article or blog post about fiqh topics.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "summary": { "type": "string" },
+        "content": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "category": { "type": "string", "enum": ["Haid", "Nifas", "Istihadloh", "Umum"] },
+        "authorId": { "type": "string" }
+      },
+      "required": ["title", "content", "category", "authorId"]
+    }
+  },
+  "firestore": {
+    "/articles/{articleId}": {
+      "schema": "article",
+      "description": "Collection of articles."
+    }
+  }
+}
