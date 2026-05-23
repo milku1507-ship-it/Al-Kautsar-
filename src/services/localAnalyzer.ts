@@ -7,7 +7,7 @@ const MAX_NIFAS_DAYS = 60;
 const MIN_PURE_DAYS = 15;
 
 import { FiqhAnalysisRequest, FiqhAnalysisResult, UserHabit, DayRecord, ExperienceStatus } from "../types";
-import { validateAge, parseDays, determineStatus, DayStrength, getBloodStrengthScore } from "./fiqhEngine";
+import { validateAge, parseDays, determineStatus, DayStrength, getBloodStrengthScore, calculateBloodHours } from "./fiqhEngine";
 import { parseISO, differenceInHours, differenceInDays, addDays, isSameDay, isBefore, isAfter, eachDayOfInterval } from "date-fns";
 interface PrayerInfo {
   name: string;
@@ -100,7 +100,6 @@ function buildFiqhAnalysisSummary(
     }
 
     summary += "\nPendarahan Anda melampaui satu siklus normal. Sistem telah memetakan hukum secara berulang (siklus) sesuai kaidah golongan Anda untuk bulan-bulan berikutnya.";
-    summary += `\n\nPenjelasan logis: ${getLogicalReason(category)}`;
 
     return summary;
 }
@@ -257,35 +256,6 @@ const MIN_PURE_DAYS = 15;
     }
   }
 
-  // 3. Qodlo Hari-hari Istihadloh/Ihtiyath yang ditinggalkan (Menanti/Disangka Haid)
-  const isFirstMonth = timeline.some(t => t.isFirstMonthWaiting);
-  const qodloDays: number[] = [];
-  
-  timeline.forEach(t => {
-      if (t.isFirstMonthWaiting || (t.status === 'Istihadloh' && t.isBlood && (!isFirstMonth || t.day <= 15)) || (t.status === 'Ihtiyath' && t.isBlood)) {
-          qodloDays.push(t.day);
-      }
-  });
-
-  if (qodloDays.length > 0) {
-      // Grouping consecutive days e.g., 9-23
-      let start = qodloDays[0];
-      let end = qodloDays[0];
-      for (let i = 1; i <= qodloDays.length; i++) {
-          if (i < qodloDays.length && qodloDays[i] === end + 1) {
-              end = qodloDays[i];
-          } else {
-              const dayRange = start === end ? `hari ke-${start}` : `hari ke-${start} s/d ke-${end}`;
-              qodloSholat.push(`Sholat fardlu di ${dayRange} wajib diqodlo jika belum dikerjakan (Darah Istihadloh (Fasad)). Karena status hukum hari-hari ini bukan Haid/Nifas.`);
-              
-              if (i < qodloDays.length) {
-                  start = qodloDays[i];
-                  end = qodloDays[i];
-              }
-          }
-      }
-  }
-
   // 4. Qodlo Puasa
   let totalHutangPuasa = 0;
   if (isRamadhan) {
@@ -379,8 +349,15 @@ export function analyzeNifas(
   if (laborIdx !== -1 && days[laborIdx].isBlood) {
     let bloodHoursPre = 0;
     for (let i = laborIdx; i >= 0; i--) {
-        if (days[i].isBlood) bloodHoursPre += 24;
-        else break;
+        const d = days[i];
+        if (d.isBlood) {
+            const rec = d.originalRecord;
+            const hours = rec?.durationHours !== undefined ? rec.durationHours : 24;
+            const mins = rec?.durationMinutes !== undefined ? rec.durationMinutes : 0;
+            bloodHoursPre += hours + (mins / 60);
+        } else {
+            break;
+        }
     }
     if (bloodHoursPre >= 24) laborBloodIsHaid = true;
   }
@@ -596,18 +573,25 @@ function evaluateIstihadlohNifas(
                 }
             }
 
+            const isWaiting = (experience === 'mubtadiah') && d.dayNumber <= 60;
+
             statusTimeline.push({
                 day: d.dayNumber,
                 date: d.date,
                 status: isNifas ? 'Nifas' : 'Istihadloh',
                 isBlood: d.isBlood,
+                isFirstMonthWaiting: isWaiting && !isNifas,
                 reason: isNifas 
                     ? (d.isStrong ? "Darah Kuat (Nifas)." : "Masa berhenti/lemah di sela-sela Nifas (Hukum Jam'u karena total <= 60 hari).") 
                     : (firstStrongIdx !== -1 && idx >= firstStrongIdx && idx <= lastStrongIdx ? "Istihadloh (Darah Lemah di sela-sela darah kuat Nifas yang totalnya > 60 hari)." : "Istihadloh (Darah Lemah).")
             });
             if (!isNifas && d.dayNumber <= 60) {
                 if (d.isBlood) {
-                    qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Darah Istihadloh). Anda meninggalkan sholat pada saat darah keluar yang ternyata dihukumi Istihadloh.`);
+                    if (isWaiting) {
+                        qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Menanti 60 Hari). Karena Anda baru pertama kali melahirkan (Nifas) dan belum memiliki kebiasaan (adat), Anda diwajibkan menanti masa maksimal nifas (60 hari). Kini setelah terbukti Istihadloh, Anda wajib mandi besar dan mengqodlo sholat yang ditinggalkan.`);
+                    } else {
+                        qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Darah Istihadloh). Anda meninggalkan sholat pada saat darah keluar yang ternyata dihukumi Istihadloh.`);
+                    }
                 } else {
                     qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Berhenti Darah di Masa Istihadloh). Anda meninggalkan sholat pada saat darah berhenti namun status hukumnya adalah Istihadloh.`);
                 }
@@ -740,10 +724,22 @@ function evaluateIstihadlohNifas(
                     }
                 }
             }
-            statusTimeline.push({ day: d.dayNumber, date: d.date, status, isBlood: d.isBlood, reason });
+            const isWaiting = (experience === 'mubtadiah') && d.dayNumber <= 60;
+            statusTimeline.push({ 
+                day: d.dayNumber, 
+                date: d.date, 
+                status, 
+                isBlood: d.isBlood, 
+                isFirstMonthWaiting: isWaiting && status !== 'Nifas',
+                reason 
+            });
             if (status === 'Istihadloh' && d.dayNumber <= 60) {
                 if (d.isBlood) {
-                    qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Darah Istihadloh). Anda meninggalkan sholat pada saat darah keluar yang ternyata dihukumi Istihadloh.`);
+                    if (isWaiting) {
+                        qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Menanti 60 Hari). Karena Anda baru pertama kali melahirkan (Nifas) dan belum memiliki kebiasaan (adat), Anda diwajibkan menanti masa maksimal nifas (60 hari). Kini setelah terbukti Istihadloh, Anda wajib mandi besar dan mengqodlo sholat yang ditinggalkan.`);
+                    } else {
+                        qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Darah Istihadloh). Anda meninggalkan sholat pada saat darah keluar yang ternyata dihukumi Istihadloh.`);
+                    }
                 } else {
                     qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Berhenti Darah di Masa Istihadloh). Anda meninggalkan sholat pada saat darah berhenti namun status hukumnya adalah Istihadloh.`);
                 }
@@ -803,15 +799,22 @@ function buildFinalNifasResult(
     qadhoObligations
   );
 
+  const bloodDayIndices = days.map((d, i) => d.isBlood ? i : -1).filter(i => i !== -1);
+  const isTerputusFlow = bloodDayIndices.length > 1 && (bloodDayIndices[bloodDayIndices.length - 1] - bloodDayIndices[0] + 1) > bloodDayIndices.length;
+
   const nifasNotes = [];
   if (statusTimeline.some(s => s.status === 'Nifas')) {
     nifasNotes.push("Minimal nifas adalah sekejap (lahdzoh). Maksimal adalah 60 hari dari saat kelahiran.");
-    nifasNotes.push("Setiap kali darah berhenti di masa nifas, wajib mandi (janabah) dan melaksanakan ibadah.");
+    if (isTerputusFlow) {
+      nifasNotes.push("Setiap kali darah berhenti di masa nifas, wajib mandi (janabah) dan melaksanakan ibadah.");
+    }
   }
 
   if (isRamadhan && totalQodloPuasa > 0) {
     nifasNotes.push(`Status Puasa: Anda memiliki hutang qodlo puasa sebanyak ${totalQodloPuasa} hari Ramadhan.`);
-    nifasNotes.push("Hari jeda bersih di sela nifas tetap wajib diqodlo jika bertepatan dengan puasa Ramadhan.");
+    if (isTerputusFlow) {
+      nifasNotes.push("Hari jeda bersih di sela nifas tetap wajib diqodlo jika bertepatan dengan puasa Ramadhan.");
+    }
   }
 
   const analysis = `Analisis status darah pasca-melahirkan menunjukkan kategori ${shortCategory}. ${statusTimeline.some(s => s.status === 'Nifas') ? "Anda sedang dalam masa nifas." : "Anda sedang dalam masa suci/haidl pasca-melahirkan."}`;
@@ -972,13 +975,26 @@ function evaluateMubtadiahMumayyizah(days: DayStrength[], isFirstMonth: boolean,
     // Build Timeline
     days.forEach((d, idx) => {
         const isHaid = haidIndices.has(idx);
+        const isWaiting = isFirstMonth && d.dayNumber <= 15;
         statusTimeline.push({
             day: d.dayNumber,
             date: d.date,
             status: isHaid ? 'Haid' : 'Istihadloh',
             isBlood: d.isBlood,
+            isFirstMonthWaiting: isWaiting && !isHaid,
             reason: isHaid ? "Darah Kuat/Lemah (Haid - Sesuai kaidah Mumayyizah)." : "Darah Lemah (Istihadloh)."
         });
+
+        // Logika Qodlo
+        if (isFirstMonth && !isHaid && d.dayNumber <= 15) {
+            if (isWaiting) {
+                qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Menanti 15 Hari). Karena Anda belum memiliki kebiasaan (adat) dan ini pengalaman pertama pendarahan panjang, Anda wajib menanti (meninggalkan sholat) selama 15 hari. Kini setelah terbukti Istihadloh, Anda wajib mandi besar dan mengqodlo sholat yang ditinggalkan dari hari ke-2 hingga ke-15.`);
+            } else if (d.isBlood) {
+                qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Darah Istihadloh). Anda meninggalkan sholat pada saat darah keluar yang ternyata dihukumi Istihadloh.`);
+            } else {
+                qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Berhenti Darah di Masa Istihadloh). Anda meninggalkan sholat pada saat darah berhenti namun status hukumnya adalah Istihadloh.`);
+            }
+        }
     });
 
     const specialNotes: string[] = [];
@@ -999,12 +1015,8 @@ function evaluateMubtadiahMumayyizah(days: DayStrength[], isFirstMonth: boolean,
         }
     } 
     // 2. Kondisi 3: Tamyiz
-    else if (isMumayyizah) {
-        langkahSelanjutnyaTeks = "Mandi wajib (janabah) dilakukan TEPAT di saat karakter darah berubah dari sifat kuat ke sifat lemah (berakhirnya masa Tamyiz).";
-    } 
-    // 3. Kondisi 4: Adat
     else {
-        langkahSelanjutnyaTeks = "Mandi wajib (janabah) dilakukan tepat setelah berlalunya jumlah hari kebiasaan (adat) haid atau nifas Anda sebelumnya.";
+        langkahSelanjutnyaTeks = "Mandi wajib (janabah) dilakukan TEPAT di saat karakter darah berubah dari sifat kuat ke sifat lemah (berakhirnya masa Tamyiz).";
     }
 
     return {
@@ -1045,9 +1057,9 @@ export function evaluateMubtadiahGhoiruMumayyizah(days: DayStrength[], isFirstMo
         });
 
         // Logika Qodlo
-        if (!isHaid && d.dayNumber <= 15) {
+        if (isFirstMonth && !isHaid && d.dayNumber <= 15) {
             if (isWaiting) {
-                qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Menanti 15 Hari). Total 14 Hari WAJIB DIQODLO. Karena Anda belum memiliki kebiasaan (adat), Anda diwajibkan menanti masa maksimal haid (15 hari) sebelum mandi. Kini setelah terbukti Istihadloh, Anda wajib mengganti sholat dari hari ke-2 hingga ke-15.`);
+                qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Menanti 15 Hari). Total 14 Hari WAJIB DIQODLO. Karena Anda belum memiliki kebiasaan (adat), Anda diwajibkan menanti masa maksimal haid (15 hari). Kini setelah terbukti Istihadloh, Anda wajib mandi dan mengganti sholat dari hari ke-2 hingga ke-15.`);
             } else if (d.isBlood) {
                 qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Darah Istihadloh). Anda meninggalkan sholat pada saat darah keluar yang ternyata dihukumi Istihadloh.`);
             } else {
@@ -1113,7 +1125,7 @@ export function evaluateMutadahMumayyizah(days: DayStrength[], habit: UserHabit,
             days.forEach((d, idx) => {
                 const sessionIdx = sessions.findIndex(s => s.days.includes(d));
                 const session = sessions[sessionIdx];
-                const isWaiting = isFirstMonth && d.dayNumber <= 15;
+                const isWaiting = false;
                 
                 let status: string;
                 let reason: string;
@@ -1142,7 +1154,7 @@ export function evaluateMutadahMumayyizah(days: DayStrength[], habit: UserHabit,
                   isFirstMonthWaiting: isWaiting && status !== 'Haid'
                 });
                 
-                if (status === 'Istihadloh' && d.dayNumber <= 15) {
+                if (isFirstMonth && status === 'Istihadloh' && d.dayNumber <= 15) {
                   if (d.isBlood) {
                     if (isWaiting) {
                       qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Menanti 15 Hari). Karena ini pengalaman pertama, Anda wajib menanti 15 hari. Ternyata Anda terbukti Istihadloh, maka wajib qodlo sholat yang ditinggalkan setelah masa adat.`);
@@ -1172,7 +1184,7 @@ export function evaluateMutadahMumayyizah(days: DayStrength[], habit: UserHabit,
                     }
                 }
 
-                const isWaiting = isFirstMonth && d.dayNumber <= 15;
+                const isWaiting = false;
                 statusTimeline.push({
                     day: d.dayNumber,
                     date: d.date,
@@ -1183,7 +1195,7 @@ export function evaluateMutadahMumayyizah(days: DayStrength[], habit: UserHabit,
                         ? (d.isStrong ? "Darah Kuat (Haid). Tamyiz mengalahkan Adat." : "Masa berhenti/lemah di sela-sela darah kuat (Haid - Hukum Jam'u karena total <= 15 hari).") 
                         : (firstStrongIdx !== -1 && idx >= firstStrongIdx && idx <= lastStrongIdx ? "Istihadloh (Darah Lemah di sela-sela darah kuat yang totalnya > 15 hari). Tamyiz Level 2." : "Istihadloh.")
                 });
-                if (!isHaid && d.dayNumber <= 15) {
+                if (isFirstMonth && !isHaid && d.dayNumber <= 15) {
                   if (d.isBlood) {
                     if (isWaiting) {
                       qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Menanti 15 Hari). Anda menanti 15 hari karena pengalaman pertama istihadloh, ternyata dihukumi Istihadloh karena Tamyiz.`);
@@ -1213,7 +1225,7 @@ export function evaluateMutadahMumayyizah(days: DayStrength[], habit: UserHabit,
                 }
             }
 
-            const isWaiting = isFirstMonth && d.dayNumber <= 15;
+            const isWaiting = false;
             statusTimeline.push({
                 day: d.dayNumber,
                 date: d.date,
@@ -1224,7 +1236,7 @@ export function evaluateMutadahMumayyizah(days: DayStrength[], habit: UserHabit,
                     ? (d.isStrong ? "Darah Kuat (Haid). Tamyiz mengalahkan Adat." : "Masa berhenti/lemah di sela-sela darah kuat (Haid - Hukum Jam'u karena total <= 15 hari).") 
                     : (firstStrongIdx !== -1 && idx >= firstStrongIdx && idx <= lastStrongIdx ? "Istihadloh (Darah Lemah di sela-sela darah kuat yang totalnya > 15 hari). Tamyiz Level 2." : "Istihadloh.")
             });
-            if (!isHaid && d.dayNumber <= 15) {
+            if (isFirstMonth && !isHaid && d.dayNumber <= 15) {
               if (d.isBlood) {
                 if (isWaiting) {
                   qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Menanti 15 Hari). Karena pengalaman pertama pendarahan panjang, Anda menanti 15 hari, ternyata hukumnya Istihadloh menurut Tamyiz.`);
@@ -1267,9 +1279,10 @@ export function evaluateMutadahGhoiruMumayyizahDzakiroh(days: DayStrength[], hab
     const specialNotes: string[] = [];
     let analysis = "";
     let category = "Golongan 4: Mu'tadah Ghoiru Mumayyizah Haidl (Dzakiroh)";
+    let purificationInstructions: string[] = [];
 
     if (isFirstMonth) {
-        specialNotes.push("Meskipun ini bulan pertama Anda mengalami pendarahan panjang, Anda sudah memiliki kebiasaan (adat). Anda cukup menanti selama durasi adat haid Anda. Begitu melewati durasi adat tersebut, Anda WAJIB segera mandi besar dan mulai sholat.");
+        specialNotes.push("Catatan Bulan Pertama: Meskipun mengalami pendarahan panjang melebihi 15 hari untuk pertama kalinya, karena Anda sudah memiliki pola adat sebelumnya, Anda tidak perlu menanti hingga 15 hari untuk ibadah. Cukup ikuti durasi adat haid aktif Anda. Begitu melewati hari adat tersebut, Anda wajib segera mandi besar dan shalat fardhu.");
     }
 
     // Kita gunakan calculationMonthIndex untuk penentuan pola (misal pola: 3, 5, 7)
@@ -1293,68 +1306,98 @@ export function evaluateMutadahGhoiruMumayyizahDzakiroh(days: DayStrength[], hab
     const activeDur = determineActiveAdat(durs, istihadlohMonthIndex);
 
     if (habit.retrospection === 'ingat_angka_lupa_urutan' && habit.durations && habit.durations.length > 0) {
-        // KASUS: LUPA URUTAN / LUPA TERAKHIR (IHTIYATH BERLAPIS)
+        // KASUS: LUPA URUTAN / LUPA TERAKHIR (IHTIYATH BERLAPIS / DZAKIROTUL QODRI NASIYATUL WAQTI)
         const sortedDurs = Array.from(new Set(habit.durations)).sort((a, b) => a - b);
         const minDur = sortedDurs[0];
         const maxDur = sortedDurs[sortedDurs.length - 1];
         
-        category = "Golongan 4: Mu'tadah Ghoiru Mumayyizah (Dzakiroh - Lupa Urutan)";
-        analysis = "Status: Mu'tadah Ghoiru Mumayyizah (Lupa Urutan/Lupa Adat Terakhir). Menerapkan hukum Ihtiyath (kehati-hatian) karena tidak ada pola teratur dan Anda lupa mana yang terakhir.";
+        category = "Golongan 4: Mu'tadah Ghoiru Mumayyizah (Dzakirotul Qodri Nasiyatul Waqti - Lupa Urutan Adat)";
+        analysis = `Status: Mu'tadah Ghoiru Mumayyizah dengan Adat Berubah-ubah tetapi Lupa Urutan/Adat Terakhir (Dzakirotul Qodri Nasiyatul Waqti). Karena Anda mengingat angka-angka durasi haid kebiasaan Anda (${sortedDurs.join(', ')} hari) tetapi lupa urutan atau mana yang terjadi di bulan terakhir sebelum istihadlah, Mazhab Syafi'i memberlakukan hukum Kehati-hatian (Ihtiyath) Berlapis sebagai berikut:`;
         
-        specialNotes.push(`Karena Anda ingat jumlah hari haid (${sortedDurs.join(', ')}) tapi lupa urutan atau mana yang terakhir, Anda wajib mandi besar sebanyak ${sortedDurs.length} kali di setiap akhir hari ke-${sortedDurs.join(', ')}.`);
-        specialNotes.push("Hukum Ihtiyath: Di antara mandi pertama (hari ke-minimal) sampai mandi terakhir (hari ke-maksimal), Anda wajib sholat & puasa seperti orang suci, namun dilarang bersetubuh dan membaca Al-Qur'an (seperti orang haid).");
+        specialNotes.push("PANDUAN HUKUM IHTIYATH BERLAPIS (LUPA URUTAN):");
+        specialNotes.push(`1. FASE YAKIN HAID (Hari ke-1 s.d ke-${minDur}): Dihukumi haid secara mutlak karena merupakan angka terendah yang pasti dilewati dan dialami dalam seluruh opsi kebiasaan adat Anda. Haram shalat, puasa, hubungan pasutri, dan membaca Al-Qur'an.`);
+        specialNotes.push(`2. FASE IHTIYATH KEHATI-HATIAN (Hari ke-${minDur + 1} s.d ke-${maxDur}): Masa yang meragukan apakah sudah suci atau masih haid. Berlaku status ganda: Anda wajib mendirikan shalat fardhu dan puasa Ramadhan (meniru orang suci), namun haram bersetubuh (jima') dan haram membaca Al-Qur'an secara lisan di luar shalat (meniru orang haid).`);
+        specialNotes.push(`3. FASE YAKIN SUCI / ISTIHADLAH (Hari ke-${maxDur + 1} ke atas): Merupakan masa suci secara meyakinkan karena pendarahan telah melampaui durasi adat maksimal Anda (${maxDur} hari). Anda dihukumi suci sepenuhnya, wajib beribadah fardhu, halal bersetubuh, dan boleh membaca Al-Qur'an.`);
+
+        purificationInstructions = [
+            `Aturan Mandi Besar Khusus Kasus Lupa Urutan (${sortedDurs.join(', ')} hari):`,
+            `Anda WAJIB mandi besar (ghusl) sebanyak ${sortedDurs.length} kali, yaitu di setiap AKHIR hari dari angka-angka adat yang Anda ingat:`,
+            ...sortedDurs.map(dur => `- Mandi besar ke-${sortedDurs.indexOf(dur) + 1}: Di akhir hari ke-${dur} siklus pendarahan Anda (karena ada kemungkinan haid Anda sebenarnya berdurasi ${dur} hari dan terputus di hari ini).`),
+            `Pada hari selain akhir hari ${sortedDurs.join(', ')} (seperti hari ke-4 atau ke-6 jika tidak ada di daftar), Anda CUKUP berwudhu seperti biasa untuk mendirikan shalat fardhu baru tanpa perlu mandi besar lagi.`,
+            `Langkah bersuci di Fase Ihtiyath: Bersihkan kemaluan -> Balut/seka -> Mandi fardhu (pada akhir hari yang ditentukan) -> Berwudhu fardhu -> Segera mendirikan shalat.`
+        ];
 
         days.forEach(d => {
-            const isWaiting = isFirstMonth && d.dayNumber <= 15;
+            const isWaiting = false;
             let status: 'Haid' | 'Ihtiyath' | 'Istihadloh';
             let reason: string;
 
             if (d.dayNumber <= minDur) {
                 status = 'Haid';
-                reason = "Haid Yakin (Batas minimal adat).";
+                reason = `Haid Yakin (Hari ke-${d.dayNumber} <= batas durasi minimal adat ${minDur} hari).`;
             } else if (d.dayNumber <= maxDur) {
                 status = 'Ihtiyath';
-                reason = "Masa Ihtiyath (Antara durasi minimal dan maksimal adat). Wajib sholat & puasa, tapi dilarang pasutri & baca Quran.";
+                reason = `Masa Kehati-hatian / Ihtiyath (Hari ke-${d.dayNumber} berada di rentang ketidakpastian adat ${minDur + 1} s.d ${maxDur} hari). Wajib sholat & puasa fardhu, tetap dilarang jima' & membaca Quran secara lisan.`;
             } else {
                 status = 'Istihadloh';
-                reason = "Istihadloh (Melampaui batas maksimal adat).";
+                reason = `Istihadloh / Yakin Suci (Hari ke-${d.dayNumber} > batas durasi maksimal adat ${maxDur} hari).`;
             }
 
             statusTimeline.push({ 
                 day: d.dayNumber, 
                 date: d.date, 
-                status, 
+                status: status === 'Haid' ? 'Haid' : (status === 'Istihadloh' ? 'Istihadloh' : 'Ihtiyath'), 
                 isBlood: d.isBlood,
                 reason,
                 isFirstMonthWaiting: isWaiting && status !== 'Haid'
             });
-            if (status === 'Istihadloh' && d.dayNumber <= 15) {
+
+            if (isFirstMonth && status === 'Istihadloh' && d.dayNumber <= 15) {
                 if (d.isBlood) {
-                    if (isWaiting) {
-                        qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Menanti 15 Hari). Anda menanti kepastian haid (first month), ternyata dihukumi Istihadloh karena melebihi durasi maksimal adat.`);
-                    } else {
-                        qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Darah Istihadloh). Anda meninggalkan sholat pada saat darah keluar yang ternyata dihukumi Istihadloh.`);
-                    }
+                    qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Darah Istihadloh - Melebihi Adat Maksimal). Sholat wajib dilaksanakan karena status hukumnya ternyata suci.`);
                 } else {
-                    qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Berhenti Darah di Masa Istihadloh). Anda meninggalkan sholat pada saat darah berhenti namun status hukumnya adalah Istihadloh.`);
+                    qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Berhenti Darah di Masa Istihadloh).`);
                 }
             }
         });
     } else {
-        // KASUS: INGAT SEMUA / INGAT DURASI (ADAT TETAP/PUTARAN/TIDAK TERATUR)
+        // KASUS: INGAT SEMUA URUTAN / INGAT DURASI (ADAT TETAP/PUTARAN/TIDAK TERATUR - MUTANAQILAH)
         if (allSame) {
             category = "Golongan 4: Mu'tadah Ghoiru Mumayyizah (Adat Tetap)";
-            analysis = `Status: Mu'tadah Ghoiru Mumayyizah (Adat Tetap). Haid dikembalikan ke adat tunggal Anda yaitu ${activeDur} hari.`;
+            analysis = `Status: Mu'tadah Ghoiru Mumayyizah dengan Adat Tetap. Durasi haid adat Anda adalah konsisten ${activeDur} hari. Sesuai dengan ketetapan Mazhab Syafi'i, pendarahan Anda dihukumi haid sepanjang hari adat Anda yaitu ${activeDur} hari pertama, dan sisanya dihukumi Istihadlah (suci).`;
+            
+            purificationInstructions = [
+                `Mandi besar wajib dilakukan TEPAT setelah melewati hari ke-${activeDur} (akhir masa haid adat Anda).`,
+                `Setelah hari ke-${activeDur} berakhir, Anda berstatus suci (Istihadlah). Anda wajib shalat dan puasa fardhu, cukup bersuci secara normal (istinja' + pembalut) dan melakukan wudhu setiap kali masuk waktu shalat fardhu baru tanpa perlu mandi besar lagi.`
+            ];
         } else if (patternN !== -1) {
-            category = "Golongan 4: Mu'tadah Ghoiru Mumayyizah (Adat Berubah Teratur)";
-            analysis = `Status: Mu'tadah Ghoiru Mumayyizah (Adat Berubah Teratur/Pola). Mengikuti pola putaran haid Anda (${durs.slice(0, patternN).join(', ')}). Untuk bulan ke-${istihadlohMonthIndex + 1} istihadloh ini, haid Anda adalah ${activeDur} hari.`;
+            category = "Golongan 4: Mu'tadah Ghoiru Mumayyizah (Adat Berubah Teratur - Mu'tadah Mutanaqolah)";
+            analysis = `Status: Mu'tadah Ghoiru Mumayyizah dengan Adat Berubah Teratur (Mu'tadah Mutanaqolah Muntadzimah). Kebiasaan haid Anda berubah-ubah membentuk pola periodik berulang secara teratur, yaitu: [${durs.slice(0, patternN).join(', ')}]. Sesuai dengan ketetapan hukum fiqh Mazhab Syafi'i, durasi haid aktif Anda mengikuti urutan pola pada bulan berjalan ini (Bulan Istihadlah ke-${istihadlohMonthIndex + 1}), yaitu sebesar ${activeDur} hari.`;
+            
+            specialNotes.push("TENTANG ADAT MUTANAQILAH MUNTADZIMAH:");
+            specialNotes.push(`Sistem mendeteksi pola haid Anda berulang tiap ${patternN} bulan dengan siklus [${durs.slice(0, patternN).join(', ')}]. Karena pola ini diulang secara konsisten hingga terbukti valid, durasi haid yang berlaku bulan ini adalah ${activeDur} hari.`);
+
+            purificationInstructions = [
+                `Mandi besar wajib Anda lakukan TEPAT setelah melewati hari ke-${activeDur} (akhir masa giliran adat haid aktif Anda bulan ini).`,
+                `Memasuki hari ke-${activeDur + 1} dan seterusnya, status Anda adalah suci (Istihadlah). Anda wajib shalat dan puasa fardhu, cukup bersuci secara biasa (istinja' + pembalut) dan berwudhu fardhu setiap kali mendirikan shalat fardhu baru tanpa perlu mandi besar.`
+            ];
         } else if (durs.length >= 2) {
-            // Cek apakah 2 putaran tapi tak beraturan
-            category = "Golongan 4: Mu'tadah Ghoiru Mumayyizah (Adat Tak Berurutan)";
-            analysis = `Status: Mu'tadah Ghoiru Mumayyizah (Adat Berubah Tidak Berurutan). Karena pola tidak teratur atau belum genap 2 putaran, haid dikembalikan ke bulan terakhir sebelum istihadloh, yaitu ${activeDur} hari.`;
+            category = "Golongan 4: Mu'tadah Ghoiru Mumayyizah (Adat Berubah Tidak Teratur)";
+            analysis = `Status: Mu'tadah Ghoiru Mumayyizah dengan Adat Berubah Tidak Teratur (Mu'tadah Mutanaqolah Ghoiru Muntadzimah). Kebiasaan haid Anda sebelum istihadlah terbukti berubah-ubah beberapa kali (${durs.join(', ')} hari) tetapi pola perulangannya tidak teratur (atau belum genap 2 kali putaran pengulangan pola). Berdasarkan kaidah fiqh Mazhab Syafi'i, pendarahan dikembalikan kepada durasi haid pada bulan terakhir yang dialami persis sebelum istihadlah dimulai, yaitu ${activeDur} hari.`;
+            
+            specialNotes.push("TENTANG ADAT MUTANAQILAH GHOIRU MUNTADZIMAH:");
+            specialNotes.push(`Karena daftar durasi haid Anda (${durs.join(', ')}) belum membentuk pola periodik yang teruji 2 kali berulang secara matematis, maka durasi haid yang diambil secara legal adalah bulan haid terakhir sebelum istihadlah, yaitu ${activeDur} hari.`);
+
+            purificationInstructions = [
+                `Mandi besar wajib Anda lakukan TEPAT setelah melewati hari ke-${activeDur} (akhir masa haid adat bulan terakhir Anda).`,
+                `Memasuki hari ke-${activeDur + 1} dan seterusnya, status Anda adalah suci (Istihadlah). Anda wajib shalat dan puasa fardhu, cukup bersuci secara biasa (istinja' + pembalut) dan berwudhu fardhu setiap kali mendirikan shalat fardhu baru.`
+            ];
         } else {
             category = "Golongan 4: Mu'tadah Ghoiru Mumayyizah (Adat Tetap)";
-            analysis = `Status: Mu'tadah Ghoiru Mumayyizah (Adat Tetap). Haid dikembalikan ke adat ${activeDur} hari.`;
+            analysis = `Status: Mu'tadah Ghoiru Mumayyizah dengan Adat Tetap. Durasi haid Anda ditetapkan kembali ke adat tunggal Anda yaitu ${activeDur} hari.`;
+            purificationInstructions = [
+                `Mandi besar setelah melewati hari ke-${activeDur} (batas akhir durasi haid Anda).`
+            ];
         }
         
         const adatSuci = habit.habitSuci || (30 - activeDur);
@@ -1363,7 +1406,7 @@ export function evaluateMutadahGhoiruMumayyizahDzakiroh(days: DayStrength[], hab
         days.forEach(d => {
             const posisi = (d.dayNumber - 1) % siklusAdat;
             const isHaid = posisi < activeDur;                
-            const isWaiting = isFirstMonth && d.dayNumber <= 15;
+            const isWaiting = false;
             
             statusTimeline.push({
                 day: d.dayNumber,
@@ -1372,18 +1415,15 @@ export function evaluateMutadahGhoiruMumayyizahDzakiroh(days: DayStrength[], hab
                 isBlood: d.isBlood,
                 isFirstMonthWaiting: isWaiting && !isHaid,
                 reason: isHaid 
-                    ? (d.isBlood ? `Haid sesuai Adat (${activeDur} hari).` : `Masa berhenti di sela-sela Haid Adat (Hukum Jam'u).`)
-                    : "Istihadloh (Masa Suci)."
+                    ? (d.isBlood ? `Haid sesuai Adat aktif (${activeDur} hari).` : `Masa berhenti di sela-sela Haid Adat aktif (Hukum Jam'u).`)
+                    : "Istihadloh (Masa Suci Adat)."
             });
-            if (!isHaid && d.dayNumber <= 15) {
+
+            if (isFirstMonth && !isHaid && d.dayNumber <= 15) {
                 if (d.isBlood) {
-                    if (isWaiting) {
-                        qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Menanti 15 Hari). Anda menanti kepastian haid hingga batas maksimal, ternyata setelah adat tetap dihitung Istihadloh.`);
-                    } else {
-                        qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Darah Istihadloh). Anda meninggalkan sholat pada saat darah keluar yang ternyata dihukumi Istihadloh.`);
-                    }
+                    qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Darah Istihadloh). Anda meninggalkan shalat pada saat darah keluar yang ternyata dihukumi Istihadloh karena melampaui durasi adat.`);
                 } else {
-                    qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Berhenti Darah di Masa Istihadloh). Anda meninggalkan sholat pada saat darah berhenti namun status hukumnya adalah Istihadloh.`);
+                    qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Berhenti Darah di Masa Istihadloh).`);
                 }
             }
         });
@@ -1392,10 +1432,13 @@ export function evaluateMutadahGhoiruMumayyizahDzakiroh(days: DayStrength[], hab
     const bIndices = days.map((d, i) => d.isBlood ? i : -1).filter(i => i !== -1);
     const isIntermittent = bIndices.length > 1 && (bIndices[bIndices.length - 1] - bIndices[0] + 1) > bIndices.length;
     if (isIntermittent) {
-        specialNotes.push("Setiap kali darah Anda berhenti (meskipun belum 15 hari), Anda WAJIB segera mandi besar (janabah) dan melaksanakan kewajiban sholat serta puasa, karena secara zahir darah yang berhenti dihukumi suci.");
+        specialNotes.push("Keterangan Tambahan (Pecah Darah - intermittency): Setiap kali darah Anda berhenti sementara di sela-sela masa pendarahan, Anda WAJIB segera mandi besar (janabah) dan melaksanakan kewajiban shalat serta puasa fardhu secara lahiriah, karena pendarahan yang berhenti dihukumi sebagai kesucian lahir.");
     }
 
-    let shortCategory = habit.retrospection === 'ingat_angka_lupa_urutan' ? "ISTIHADLOH (MU'TADAH GHOIRU MUMAYYIZAH DZAKIROH LI'ADATIHA QODRON WA WAQTAN)" : "ISTIHADLOH (MU'TADAH GHOIRU MUMAYYIZAH DZAKIROH LI'ADATIHA QODRON WA WAQTAN)";
+    let shortCategory = habit.retrospection === 'ingat_angka_lupa_urutan' 
+        ? "ISTIHADLO (MU'TADAH GHOIRU MUMAYYIZAH DZAKIROTUL QODRI NASIYATUL WAQTI)" 
+        : "ISTIHADLO (MU'TADAH GHOIRU MUMAYYIZAH DZAKIROTUL QODRI WAL WAQTI)";
+        
     const baseSummary = buildFiqhAnalysisSummary(category, statusTimeline, days);
     analysis = `${analysis} ${baseSummary}`;
 
@@ -1404,10 +1447,10 @@ export function evaluateMutadahGhoiruMumayyizahDzakiroh(days: DayStrength[], hab
         category,
         shortCategory,
         statusTimeline,
-        purificationInstructions: ["Mandi wajib di setiap akhir kemungkinan durasi adat (jika lupa urutan) atau setelah masa adat tetap berlalu."],
+        purificationInstructions,
         qadhoObligations,
         specialNotes,
-        legalBasis: "Kitab Uyunul Masa-il Linnisa & Fathul Qorib."
+        legalBasis: "Kitab Al-Majmu' Syarh Al-Muhadzdzab, Hasyiyah Al-Bajuri jilid 1, & Kitab Uyunul Masa-il Linnisa."
     };
 }
 
@@ -1418,17 +1461,18 @@ export function evaluateMutahayyiroh(days: DayStrength[], habit: UserHabit, isRa
     const statusTimeline: any[] = [];
     const specialNotes: string[] = [];
     const qadhoObligations: string[] = [];
-    let analysis = "Status: Mu'tadah Ghoiru Mumayyizah Nasiyah (Mutahayyiroh / Muhayyaroh / Muhayyiroh). Anda lupa durasi haid dan waktu mulainya. Hukum yang diterapkan adalah Ihtiyath (Kehati-hatian).";
+    let analysis = "Status: Mu'tadah Ghoiru Mumayyizah Nasiyah (Mutahayyirah Mutlaqah / Bingung Total). Anda mengalami Istihadlah panjang (melebihi 15 hari), darah seragam dan tidak bisa dibedakan kekuatannya (Ghoiru Mumayyizah), serta Anda lupa total durasi haid (qadar) dan waktu mulai biasanya (waqt). Berdasarkan Mazhab Syafi'i, hukum Anda dihukumi dengan asas Kehati-hatian penuh (Ihtiyath). Anda diperlakukan sebagai wanita haid untuk hal-hal yang membahayakan (keharaman) dan diperlakukan sebagai wanita suci untuk kewajiban (keabsahan ibadah fardhu).";
     let category = "Golongan 5: Mutahayyiroh (Lupa Adat Total)";
 
     if (isFirstMonth) {
-        specialNotes.push("Catatan: Anda masuk kategori Mutahayyiroh karena sudah pernah haid/suci namun lupa pola adatnya saat mengalami istihadloh.");
+        specialNotes.push("Catatan Khusus Bulan Pertama: Karena darah keluar melebihi 15 hari untuk pertama kalinya dan Anda lupa pola adat lama Anda, Anda resmi berada dalam kategori Mutahayyirah Mutlaqoh.");
     }
 
     days.forEach(d => {
         const isWaiting = isFirstMonth && d.dayNumber <= 15;
         const status = 'Ihtiyath';
-        const reason = "Status Mutahayyiroh Mutlaqoh (Lupa Adat Kadar & Waktu). Wajib Ihtiyath.";
+        const reason = "Status Mutahayyiroh Mutlaqoh: Masa ketidakpastian (meragukan antara haid dan suci). Berdasarkan kaidah kehati-hatian (Ihtiyath), setiap hari dihukumi berpotensi haid (berlaku keharaman) sekaligus berpotensi suci (kewajiban ibadah fardhu tetap berjalan).";
+        
         statusTimeline.push({ 
             day: d.dayNumber, 
             date: d.date, 
@@ -1438,53 +1482,78 @@ export function evaluateMutahayyiroh(days: DayStrength[], habit: UserHabit, isRa
             isFirstMonthWaiting: isWaiting
         });
         
-        if (d.isBlood && d.dayNumber <= 15) {
-            if (isWaiting) {
-                qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Menanti 15 Hari). Anda menanti 15 hari kepastian haid karena lupa adat total. Status Anda adalah Ihtiyath, maka sholat yang ditinggalkan wajib diqodlo.`);
+        if (isFirstMonth && d.dayNumber <= 15) {
+            if (d.isBlood) {
+                if (isWaiting) {
+                    qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodly (Masa Menanti). Selama 15 hari pertama Anda tidak shalat karena mengira haid biasa. Karena terbukti sebagai Istihadlah panjang, masa tersebut wajib diqodly demi kehati-hatian.`);
+                } else {
+                    qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodly (Masa Ihtiyath - Darah Keluar).`);
+                }
             } else {
-                qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Ihtiyath - Darah Keluar). Karena status Lupa Adat, sholat tetap wajib dilaksanakan, namun jika ditinggalkan wajib diqodlo.`);
+                qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodly (Masa Ihtiyath - Berhenti Darah).`);
             }
-        } else if (d.dayNumber <= 15) {
-            qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Ihtiyath - Berhenti Darah). Meskipun berhenti darah, status hukum adalah Ihtiyath sehingga sholat wajib diqodlo jika tidak dilaksanakan.`);
         }
     });
 
-    specialNotes.push("HUKUM SEBAGAI ORANG HAIDL (KEHARAMAN):");
-    specialNotes.push("1. Menikmati anggota tubuh di antara pusar dan lutut bagi suami.");
-    specialNotes.push("2. Membaca Al-Qur'an di luar sholat.");
-    specialNotes.push("3. Menyentuh dan membawa Al-Qur'an.");
-    specialNotes.push("4. Berdiam dan lewat di dalam masjid (jika khawatir menetes).");
+    if (!isFirstMonth) {
+        qadhoObligations.push("Kewajiban Shalat Bulanan: Seluruh shalat fardhu 5 waktu WAJIB dikerjakan tepat pada waktunya setelah bersuci dan mandi wajib (ghusl). Jika selama berjalannya hari ada shalat fardhu yang terlewat, Anda wajib segera mengqodly-nya.");
+    }
 
-    specialNotes.push("HUKUM SEBAGAI ORANG SUCI (KEWAJIBAN):");
-    specialNotes.push("Tetap wajib: Sholat, Puasa, Thowaf, I'tikaf, Tholaq, dan Mandi.");
+    specialNotes.push("HUKUM KEHARAMAN (Sebagaimana Orang Haid):");
+    specialNotes.push("Berdasarkan aturan kehati-hatian (Ihtiyath) karena kemungkinan sedang haid, Anda dilarang melakukan hal-hal berikut:");
+    specialNotes.push("1. Bersetubuh (jima') dengan suami, atau menikmati bagian tubuh di antara pusar dan lutut.");
+    specialNotes.push("2. Membaca Al-Qur'an secara lisan dengan niat membaca Al-Qur'an (tilawah) di luar shalat. Membaca Al-Qur'an dengan niat dzikir, perlindungan (ta'awwudz), atau doa tetap diperbolehkan. Saat shalat fardhu, Anda tetap wajib melafadzkan surat Al-Fatihah.");
+    specialNotes.push("3. Menyentuh, membawa, dan memegang mushaf Al-Qur'an.");
+    specialNotes.push("4. Berdiam diri (i'tikaf) dan melintasi masjid jika khawatir darah akan menetes dan menajiskan masjid.");
+
+    specialNotes.push("HUKUM KEWAJIBAN & KEABSAHAN (Sebagaimana Orang Suci):");
+    specialNotes.push("Karena kemungkinan Anda sedang suci, demi sahnya dan amannya status ibadah fardhu Anda:");
+    specialNotes.push("1. Shalat fardhu lima waktu tetap wajib didirikan tepat waktu.");
+    specialNotes.push("2. Puasa wajib Ramadhan tetap wajib dikerjakan seluruhnya.");
+    specialNotes.push("3. Thawaf fardhu tetap wajib dilakukan dengan bersuci terlebih dahulu, dan tholaq (talak) yang dijatuhkan suami di masa ini tetap dihukumi sah.");
 
     if (habit.ingatWaktuBerhenti) {
-        specialNotes.push("INSTRUKSI MANDI: Karena Anda ingat waktu berhentinya saja, maka Anda WAJIB mandi ketika waktu itu saja (setiap hari di jam yang sama), selanjutnya cukup berwudlu.");
+        specialNotes.push("INSTRUKSI MANDI KHUSUS: Karena Anda ingat waktu berhentinya saja (misal sore hari), Anda hanya wajib mandi besar SEKALI sehari tepat pada jam tersebut. Untuk shalat fardhu lainnya dalam hari tersebut, Anda cukup bersuci (istinja' + pembalut) dan melakukan wudhu.");
     } else {
-        specialNotes.push("INSTRUKSI MANDI: Karena Anda sama sekali tidak ingat waktu berhentinya haid, Anda WAJIB mandi setiap akan melakukan ibadah fardlu (setiap masuk waktu sholat fardlu).");
+        specialNotes.push("INSTRUKSI MANDI UTAMA: Karena Anda sama sekali tidak ingat waktu berhentinya haid Anda, Anda WAJIB MANDI BESAR setiap kali hendak menunaikan shalat fardhu baru (setiap masuk waktu shalat). Hal ini karena ada probabilitas haid berhenti di setiap detik.");
     }
 
     if (isRamadhan) {
-        specialNotes.push("CARA PUASA RAMADHAN MUTAHAYYIROH:");
-        specialNotes.push("1. Puasa satu bulan penuh di bulan Ramadhan.");
-        specialNotes.push("2. Puasa 30 hari berturut-turut setelah Ramadhan.");
-        specialNotes.push("3. Setelah itu, Anda pasti memiliki hutang 2 hari (karena ketidakpastian masa haid maksimal 15 hari).");
-        specialNotes.push("CARA QODLO 2 HARI: Puasa 3 hari berturut-turut, tidak puasa 12 hari berturut-turut, lalu puasa lagi 3 hari berturut-turut.");
+        specialNotes.push("TENTANG PUASA RAMADHAN & CARA QODHO (METODE SHAFI'I - 30+30+3-12-3):");
+        specialNotes.push("Untuk menyucikan puasa wajib Anda dari keraguan haid, Mazhab Syafi'i mewajibkan tata cara qodho bertahap sebagai berikut:");
+        specialNotes.push("1. Puasa Ramadhan: Wajib berpuasa penuh selama 30 hari di bulan Ramadhan demi menghormati bulan suci. Namun, keabsahan puasa ini belum dianggap sah sepenuhnya.");
+        specialNotes.push("2. Qodho Tahap Pertama: Begitu bulan Ramadhan berakhir, Anda wajib mengqodho puasa sebanyak 30 hari berturut-turut. Dari gabungan puasa Ramadhan (30 hari) dan qodho beruntun (30 hari) ini, Anda secara matematis dipastikan mendapatkan minimal 28 hari puasa yang sah dan suci.");
+        specialNotes.push("3. Qodho Tahap Kedua (Menutup Hutang 2 Hari): Untuk menyempurnakan sisa 2 hari puasa agar genap 30 hari yang sah, Anda harus melakukan puasa qodho tambahan dengan pola khusus:");
+        specialNotes.push("   👉 Berpuasalah selama 3 hari berturut-turut, lalu tidak berpuasa (makan) selama 12 hari, kemudian lakukan puasa lagi selama 3 hari berturut-turut. Pola ini menjamin Anda mendapatkan sisa 2 hari puasa yang suci secara mutlak.");
+        specialNotes.push("💡 Total hari pengerjaan puasa Anda untuk menyelesaikan satu bulan Ramadhan fardhu secara meyakinkan adalah 30 hari Ramadhan + 30 hari Qodho Tahap I + 6 hari Qodho Tahap II (total 66 hari jatah puasa).");
     }
 
     let shortCategory = "ISTIHADLOH (MU'TADAH GHOIRU MUMAYYIZAH NASIYAH LI'ADATIHA QODRON WA WAQTAN / MUTAHAYYIROH)";
     const baseSummary = buildFiqhAnalysisSummary(category, statusTimeline, days);
     analysis = `${analysis} ${baseSummary}`;
 
+    const purificationInstructions = [
+        habit.ingatWaktuBerhenti 
+          ? "Cara bersuci (Mandi Khusus): Karena Anda hanya ingat waktu berhentinya saja, Anda wajib mandi besar setiap hari tepat pada waktu tersebut (misal jam berhenti yang Anda ingat), lalu cukup berwudlu untuk fardlu berikutnya."
+          : "Cara bersuci (Wajib Mandi Setiap Sholat Fardlu): Karena Anda sama sekali tidak ingat waktu berhentinya haid, Anda WAJIB MANDI BESAR setiap kali hendak menunaikan shalat fardhu (setiap masuk waktu shalat).",
+        "Langkah-langkah bersuci untuk setiap shalat fardhu:",
+        "1. Tunggu hingga waktu shalat fardhu benar-benar masuk.",
+        "2. Bersihkan kemaluan dari darah dan kotoran (istinja').",
+        "3. Segera sumbat dengan kapas pembalut jika darah masih mengalir dan gunakan pembalut yang rapat (jika sedang berpuasa di siang hari, cukup dibalut luarnya saja tanpa menyumbat bagian dalam).",
+        "4. Lakukan mandi besar (Ghusl) dengan niat bersuci dari haid agar diperbolehkan melaksanakan shalat fardhu (Niat: 'Sengaja saya mandi fardhu karena istihadloh untuk kebolehan shalat fardhu' / 'نويت الغسل لاستباحة الصلاة الفرض').",
+        "5. Lakukan wudhu dengan segera setelah mandi.",
+        "6. Segera dirikan shalat fardhu tanpa menunda-nunda."
+    ];
+
     return {
         analysis,
         category,
         shortCategory,
         statusTimeline,
-        purificationInstructions: [habit.ingatWaktuBerhenti ? "Mandi besar setiap hari di jam berhenti haid." : "Mandi besar setiap kali akan sholat fardlu."],
+        purificationInstructions,
         qadhoObligations,
         specialNotes,
-        legalBasis: "Kitab Al-Majmu' & Fathul Qorib."
+        legalBasis: "Kitab Al-Majmu' Syarh Al-Muhadzdzab & Fathul Qorib."
     };
 }
 
@@ -1492,65 +1561,108 @@ export function evaluateMutahayyiroh(days: DayStrength[], habit: UserHabit, isRa
  * 12. GOLONGAN 7: MU'TADAH GHOIRU MUMAYYIZAH DZAKIROH LI'ADATIHA WAKTAN LA QODRON
  * Ingat waktu mulai, lupa durasi (Category 7)
  */
-export function evaluateMutadahIngatWaktuLupaDurasi(days: DayStrength[], isFirstMonth: boolean = false): FiqhAnalysisResult {
+export function evaluateMutadahIngatWaktuLupaDurasi(days: DayStrength[], isFirstMonth: boolean = false, isRamadhan: boolean = false): FiqhAnalysisResult {
   const statusTimeline: any[] = [];
   const specialNotes: string[] = [];
   const qadhoObligations: string[] = [];
-  let category = "Golongan 7: Mu'tadah Ghoiru Mumayyizah Dzakiroh Waktan la Qodron";
-  let analysis = "Status: Mu'tadah Ghoiru Mumayyizah (Ingat Waktu Mulai, Lupa Durasi). Berdasarkan kaidah fiqh: Masa yakin haid dihukumi haid, masa yakin suci dihukumi suci, dan masa meragukan dihukumi Ihtiyath (Mutahayyiroh).";
+  let category = "Golongan 7: Mu'tadah Ghoiru Mumayyizah Dzakiroh Waktan la Qodron (Lupa Kadar, Ingat Waktu)";
+  let analysis = "Status: Mu'tadah Ghoiru Mumayyizah Dzakiroh li-'adatiha Waqtan la Qodron (Ingat Waktu Mulai, Lupa Durasi). Berdasarkan mazhab Syafi'i, siklus dibagi menjadi 3 fase: (1) Fase Yakin Haid pada hari pertama sesuai batas minimal haid, (2) Fase Kehati-hatian (Ihtiyath) pada hari ke-2 hingga hari ke-15 karena ketidakpastian persisnya durasi adat biasanya, (3) Fase Yakin Suci dari hari ke-16 dan seterusnya karena melampaui batas maksimal haid 15 hari.";
 
   if (isFirstMonth) {
-    specialNotes.push("Catatan: Anda masuk kategori ini karena mengalami istihadloh namun lupa durasi haid biasanya, sedangkan waktu mulainya Anda ingat.");
+    specialNotes.push("Catatan: Anda masuk kategori ini karena mengalami istihadlo panjang (melebihi 15 hari) dan tidak memiliki pola darah kuat-lemah yang memenuhi syarat Tamyiz, namun Anda mengingat dengan pasti waktu/hari mulainya haid sedangkan Anda lupa durasi/kadarnya.");
   }
 
   days.forEach((d, idx) => {
     let status: 'Haid' | 'Ihtiyath' | 'Suci' | 'Istihadloh';
     let reason: string;
+    const isWaiting = isFirstMonth && d.dayNumber <= 15;
 
     if (idx === 0) {
       status = 'Haid';
-      reason = "Yakin Haid (Waktu mulai yang diingat & minimal haid).";
+      reason = "Fase Yakin Haid: Hari pertama dihitung yakin haid karena ini adalah waktu mulai adat yang Anda ingat dan memenuhi kadar minimal haid (24 jam).";
     } else if (idx < 15) {
       status = 'Ihtiyath';
-      reason = "Masa Ihtiyath (Mungkin haid, mungkin suci, mungkin putus).";
+      reason = "Fase Ihtiyath: Hari ke-2 sampai ke-15 dihukumi meragukan (antara haid dan suci) sebab Anda tidak tahu persis pada hari keberapa haid Anda biasanya selesai.";
     } else {
       status = 'Suci';
-      reason = "Yakin Suci (Pasti sudah melampaui batas maksimal haid 15 hari).";
+      reason = "Fase Yakin Suci: Sejak hari ke-16 Anda dipastikan sudah suci karena batas maksimal haid dalam mazhab Syafi'i adalah 15 hari.";
     }
 
     statusTimeline.push({ 
       day: d.dayNumber, 
       date: d.date, 
-      status: status === 'Suci' ? 'Suci' : status as any, 
+      status: status === 'Suci' ? (d.isBlood ? 'Istihadloh' : 'Suci') : status as any, 
       isBlood: d.isBlood,
-      reason 
+      reason,
+      isFirstMonthWaiting: isWaiting
     });
-    if (status === 'Ihtiyath' && d.dayNumber <= 15) {
+
+    if (status === 'Haid') {
+      if (isFirstMonth) {
+        qadhoObligations.push(`Sholat hari ke-${d.dayNumber} (Yakin Haid): Tidak perlu diqodlo karena dihukumi haid secara pasti.`);
+      }
+    } else if (status === 'Ihtiyath' && d.dayNumber <= 15) {
+      if (isFirstMonth) {
         if (d.isBlood) {
-            qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Ihtiyath - Darah Keluar). Karena status meragukan, sholat tetap wajib dilaksanakan, namun jika ditinggalkan wajib diqodlo.`);
+          qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Masa Kehati-hatian / Ihtiyath). Selama masa ini Anda tetap sholat, namun karena statusnya meragukan, apabila ada sholat yang terlewat wajib diqodlo.`);
         } else {
-            qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Ihtiyath - Berhenti Darah). Masa meragukan (Ihtiyath) mewajibkan sholat diqodlo jika tidak dilaksanakan.`);
+          qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Masa Ihtiyath - Darah Berhenti).`);
         }
+      }
     }
   });
 
-  specialNotes.push("HUKUM MASA YAKIN HAID (Hari Pertama): Dihukumi layaknya orang haid (Haram sholat, puasa, pasutri, baca Quran).");
-  specialNotes.push("HUKUM MASA YAKIN SUCI (Hari ke-16 dst): Dihukumi layaknya orang suci (Halal pasutri, wajib ibadah).");
-  specialNotes.push("HUKUM MASA IHTIYATH (Hari ke-2 s.d ke-15): Dihukumi sebagaimana wanita Mutahayyiroh. Wajib sholat & puasa, tapi dilarang pasutri & baca Quran. Wajib mandi besar setiap akan sholat fardlu di masa ini.");
+  specialNotes.push("HUKUM FASE YAKIN HAID (Hari ke-1):");
+  specialNotes.push("Berlaku penuh keharaman haid: Haram shalat, puasa, thawaf, bersetubuh (jima'), melintasi masjid jika khawatir menetes, dan haram membaca Al-Qur'an secara lisan di luar shalat fardhu.");
+  
+  specialNotes.push("HUKUM FASE IHTIYATH / KEHATI-HATIAN (Hari ke-2 s.d ke-15):");
+  specialNotes.push("Status hukum Anda di fase ini menyerupai wanita Mutahayyiroh. Anda wajib bersikap hati-hati (Ihtiyath):");
+  specialNotes.push("1. Wajib sholat fardhu lima waktu dan wajib berpuasa Ramadhan.");
+  specialNotes.push("2. Haram bersetubuh (jima') dengan suami.");
+  specialNotes.push("3. Haram menyentuh Al-Qur'an dan haram melafadzkan Al-Qur'an di luar shalat secara lisan dengan niat membaca Qur'an (sekadar dzikir/doa tetap boleh).");
+  specialNotes.push("4. Wajib melakukan mandi besar (ghusl) setiap kali akan melaksanakan shalat fardhu baru karena ada kemungkinan haid Anda berhenti di setiap detiknya.");
+
+  specialNotes.push("HUKUM FASE YAKIN SUCI (Hari ke-16 dst):");
+  specialNotes.push("Darah yang keluar di fase ini dihukumi sebagai darah Istihadloh (bukan haid). Anda sudah sepenuhnya suci dari haid:");
+  specialNotes.push("1. Wajib menjalankan ibadah sebagaimana wanita suci biasa (shalat fardhu, puasa).");
+  specialNotes.push("2. Diperbolehkan bersetubuh dengan suami.");
+  specialNotes.push("3. Boleh menyentuh, membaca, dan membawa Al-Qur'an.");
+  specialNotes.push("4. Tidak perlu lagi mandi besar setiap kali shalat fardhu baru, cukup bersuci (istinja' + pembalut) dan wudhu setiap masuk waktu shalat.");
+
+  if (isRamadhan) {
+    specialNotes.push("TENTANG PUASA RAMADHAN & CARA QODLO:");
+    specialNotes.push("1. Hari ke-1 (Yakin Haid): Anda haram berpuasa. Wajib mengqodho puasa yang ditinggalkan sebanyak 1 hari ini.");
+    specialNotes.push("2. Hari ke-2 s.d 15 (Masa Ihtiyath): Anda wajib berpuasa fardhu Ramadhan untuk menghormati bulan suci. Namun puasa di masa keraguan ini tidak dihukumi sah sepenuhnya, sehingga Anda tetap berkewajiban mengqodho puasa tersebut sebanyak 14 hari.");
+    specialNotes.push("3. Hari ke-16 s.d 30 (Yakin Suci): Puasa Ramadhan yang Anda jalani sah sepenuhnya dan tidak perlu diqodho karena Anda dipastikan telah berada di masa suci dari haid.");
+    specialNotes.push("💡 REKOMENDASI CARA QODLO YANG MUDAH: Karena Anda ingat persis waktu mulainya haid bulanan Anda, maka Anda juga tahu persis kapan masa Yakin Suci Anda (yaitu hari ke-16 s.d 30 setelah waktu mulai haid). Lakukanlah puasa qodho hanya pada masa Yakin Suci di bulan-bulan berikutnya agar qodho Anda sah sepenuhnya tanpa keraguan.");
+  }
 
   let shortCategory = "ISTIHADLOH (MU'TADAH GHOIRU MUMAYYIZAH DZAKIROH LI'ADATIHA WAQTAN LA QODRON)";
   const baseSummary = buildFiqhAnalysisSummary(category, statusTimeline, days);
   analysis = `${analysis} ${baseSummary}`;
+
+  const purificationInstructions = [
+    "Cara Bersuci Pada Fase Ihtiyath (Hari ke-2 s.d 15):",
+    "Karena ada kemungkinan haid Anda terputus/berhenti di setiap detik, Anda wajib melakukan MANDI BESAR setiap kali hendak melaksanakan shalat fardhu (setiap shalat fardhu membutuhkan satu kali mandi wajib tersendiri).",
+    "Langkah-langkah bersuci untuk setiap shalat fardhu di masa Ihtiyath:",
+    "1. Ketahuilah dengan yakin bahwa waktu shalat fardhu tersebut sudah benar-benar masuk.",
+    "2. Bersihkan kemaluan dari darah dan kotoran (istinja').",
+    "3. Sumpat dengan kapas pembalut jika darah masih mengalir dan gunakan pembalut yang rapat (jika sedang berpuasa di siang hari, cukup dibalut luarnya saja tanpa menyumbat bagian dalam untuk mencegah pembatalan puasa akibat masuknya benda ke dalam rongga tubuh).",
+    "4. Segera lakukan mandi besar (Ghusl) dengan niat memperbolehkan shalat fardhu (Niat: 'Sengaja saya mandi fardhu karena istihadloh untuk kebolehan shalat fardhu' / 'نويت الغسل لاستباحة الفرض').",
+    "5. Segera lakukan wudhu setelah mandi tanpa jeda lama.",
+    "6. Segera laksanakan shalat fardhu tanpa menunda-nunda.",
+    "Catatan penting setelah Hari ke-15 (Hari ke-16 dst): Anda tidak perlu lagi mandi besar setiap hendak shalat fardhu. Cukup lakukan istinja', balut dengan pembalut bersih, lalu berwudhu setiap kali masuk waktu shalat fardhu baru."
+  ];
 
   return {
     analysis,
     category,
     shortCategory,
     statusTimeline,
-    purificationInstructions: ["Mandi besar setiap kali akan sholat fardlu selama masa Ihtiyath (Hari ke-2 s.d ke-15)."],
+    purificationInstructions,
     qadhoObligations,
     specialNotes,
-    legalBasis: "Kitab Uyunul Masa-il Linnisa'."
+    legalBasis: "Kitab Al-Majmu' Syarh Al-Muhadzdzab, Hasyiyah Al-Bajuri, & Uyunul Masa-il Linnisa'."
   };
 }
 
@@ -1558,84 +1670,164 @@ export function evaluateMutadahIngatWaktuLupaDurasi(days: DayStrength[], isFirst
  * 13. GOLONGAN 6: MU'TADAH GHOIRU MUMAYYIZAH DZAKIROH LI'ADATIHA QODRON LA WAKTAN
  * Ingat durasi, lupa waktu mulai (Category 6)
  */
-export function evaluateMutadahIngatDurasiLupaWaktu(days: DayStrength[], habit: UserHabit, isFirstMonth: boolean = false): FiqhAnalysisResult {
+export function evaluateMutadahIngatDurasiLupaWaktu(days: DayStrength[], habit: UserHabit, isFirstMonth: boolean = false, isRamadhan: boolean = false): FiqhAnalysisResult {
   const statusTimeline: any[] = [];
   const specialNotes: string[] = [];
   const qadhoObligations: string[] = [];
-  let category = "Golongan 6: Mu'tadah Ghoiru Mumayyizah Dzakiroh Qodron la Waktan";
-  
+  let category = "Golongan 6: Mu'tadah Ghoiru Mumayyizah Dzakiroh Qodron la Waqtan (Ingat Kadar/Durasi, Lupa Waktu)";
+  let analysis = "Status: Mu'tadah Ghoiru Mumayyizah Dzakiroh li-adatiha Qodron la Waqtan. Berdasarkan Mazhab Syafi'i, siklus dianalisis menggunakan siklus standar 30 hari. Karena Anda mengetahui dengan pasti durasi haid adat Anda (qadar) tetapi lupa hari mulainya (waqt), maka hari-hari dikelompokkan berdasarkan kemungkinan terjadinya haid:";
+
   if (isFirstMonth) {
-    specialNotes.push("Catatan: Anda masuk kategori ini karena mengingat durasi haid biasanya, tapi lupa tepatnya di tanggal berapa (dalam suatu rentang waktu).");
+    specialNotes.push("Catatan Khusus Bulan Pertama: Anda memasuki kategori ini karena mengalami pendarahan panjang (lebih dari 15 hari) dan tidak memiliki pola darah kuat-lemah (Tamyiz) yang valid, namun Anda mengingat dengan pasti durasi/kadar haid bulanan Anda yang biasa sedangkan Anda lupa hari/waktu mulainya.");
   }
+
+  const durHaid = habit.duration || 7;
+  const tglSuci = habit.knownPureDay || 0;
+
+  // Skenario 1: Tidak ada hari yang diyakini pasti suci (tglSuci = 0)
+  // Skenario 2: Ada hari yang diyakini pasti suci (tglSuci > 0). Maka haid berdurasi durHaid tidak mungkin tumpang tindih dengan tglSuci.
+  const K = tglSuci;
+  const L1 = K > 1 ? K - 1 : 0;
+  const L2 = K > 0 ? 30 - K : 0;
   
-  const durHaid = habit.duration || 5;
-  const rentangWaktu = habit.timeRange || 10;
-  const tglSuci = habit.knownPureDay || 1;
+  const fit1 = K > 0 && durHaid <= L1;
+  const fit2 = K > 0 && durHaid <= L2;
 
-  // Mencari kemungkinan start yang valid
-  let possibleStarts: number[] = [];
-  const totalPossibleStarts = rentangWaktu - durHaid + 1;
-  for (let s = 1; s <= totalPossibleStarts; s++) {
-    const end = s + durHaid - 1;
-    // Cek apakah tglSuci masuk ke dlm blok haid ini? Jika ya, maka s bukan start yg valid.
-    const isPureDayInBlock = tglSuci >= s && tglSuci <= end;
-    if (!isPureDayInBlock) {
-      possibleStarts.push(s);
-    }
-  }
-
-  // Titik yakin haid adalah irisan dari semua kemungkinan blocks yang tersisa
-  let startOfIntersection = -1;
-  let endOfIntersection = -1;
-
-  if (possibleStarts.length > 0) {
-    const minStart = Math.min(...possibleStarts);
-    const maxStart = Math.max(...possibleStarts);
-
-    // Intersection: [maxStart, minStart + durHaid - 1]
-    startOfIntersection = maxStart;
-    endOfIntersection = minStart + durHaid - 1;
-  }
-
-  const hasIntersection = startOfIntersection !== -1 && startOfIntersection <= endOfIntersection;
-
-  let analysis = `Status: Mu'tadah Ghoiru Mumayyizah (Ingat Durasi ${durHaid} hari dalam rentang ${rentangWaktu} hari, Day ${tglSuci} Suci). `;
-  
   days.forEach((d, idx) => {
-    const tgl = idx + 1;
+    const tgl = d.dayNumber;
+    const relDay = ((tgl - 1) % 30) + 1; // Relatif dalam siklus 30 hari
     let status: 'Haid' | 'Ihtiyath' | 'Suci' | 'Istihadloh';
     let reason: string;
+    const isWaiting = isFirstMonth && tgl <= 15;
 
-    if (tgl === tglSuci || tgl > rentangWaktu) {
-      status = 'Suci';
-      reason = tgl === tglSuci ? "Yakin Suci (Input Data)." : "Yakin Suci (Di luar rentang kebiasaan).";
-    } else if (hasIntersection && tgl >= startOfIntersection && tgl <= endOfIntersection) {
-      status = 'Haid';
-      reason = "Yakin Haid (Titik irisan semua kemungkinan jadwal haid).";
-    } else {
+    if (K === 0) {
       status = 'Ihtiyath';
-      reason = tgl < startOfIntersection ? "Ihtiyath (Mungkin haid, mungkin suci)." : "Ihtiyath (Mungkin haid, maybe suci, mungkin putus).";
+      reason = `Masa Kehati-hatian (Ihtiyath): Karena Anda tidak memiliki titik tanggal suci sebagai rujukan, seluruh hari dalam siklus berpotensi merupakan masa haid maupun suci. Anda wajib shalat dan puasa fardhu, namun dilarang bersetubuh (jima') dan dilarang membaca Qur'an secara lisan.`;
+    } else {
+      if (relDay === K) {
+        status = 'Suci';
+        reason = `Yakin Suci: Sesuai dengan tanggal rujukan adat suci yang Anda ingat secara pasti (Hari ke-${K}).`;
+      } else if (!fit1 && !fit2) {
+        status = 'Ihtiyath';
+        reason = `Masa Kehati-hatian (Ihtiyath): Hubungan matematis durasi adat (${durHaid} hari) dengan tanggal suci ke-${K} tidak menyisakan ruang muat tunggal yang pasti. Seluruh hari di luar tanggal suci dihukumi meragukan.`;
+      } else if (fit1 && !fit2) {
+        // Haid hanya muat di rentang sebelum K [1, K-1]
+        // Maka rentang sesudah K [K+1, 30] diyakini suci
+        if (relDay > K) {
+          status = d.isBlood ? 'Istihadloh' : 'Suci';
+          reason = `Yakin Suci: Durasi haid adat Anda (${durHaid} hari) tidak muat lagi diletakkan di rentang hari ke-${K+1} s.d 30 karena areanya terlalu sempit (${L2} hari).`;
+        } else {
+          // relDay < K
+          const startIntersection = L1 - durHaid + 1;
+          const endIntersection = durHaid;
+          if (startIntersection <= endIntersection && relDay >= startIntersection && relDay <= endIntersection) {
+            status = 'Haid';
+            reason = `Yakin Haid: Hari ke-${relDay} merupakan titik irisan (overlap) yang dipastikan selalu dilewati oleh pendarahan haid ${durHaid} hari Anda di dalam sub-rentang 1 s.d ${K-1}.`;
+          } else {
+            status = 'Ihtiyath';
+            reason = `Masa Kehati-hatian (Ihtiyath): Hari ke-${relDay} berkemungkinan menjadi awal, pertengahan, atau akhir haid ${durHaid} hari Anda di dalam sub-rentang 1 s.d ${K-1}.`;
+          }
+        }
+      } else if (fit2 && !fit1) {
+        // Haid hanya muat di rentang sesudah K [K+1, 30]
+        // Maka rentang sebelum K [1, K-1] diyakini suci
+        if (relDay < K) {
+          status = d.isBlood ? 'Istihadloh' : 'Suci';
+          reason = `Yakin Suci: Durasi haid adat Anda (${durHaid} hari) tidak muat diletakkan di rentang hari ke-1 s.d ${K-1} karena areanya terlalu sempit (${L1} hari).`;
+        } else {
+          // relDay > K
+          const startIntersection = 30 - durHaid + 1;
+          const endIntersection = K + durHaid;
+          if (startIntersection <= endIntersection && relDay >= startIntersection && relDay <= endIntersection) {
+            status = 'Haid';
+            reason = `Yakin Haid: Hari ke-${relDay} merupakan titik irisan (overlap) yang dipastikan selalu dilewati oleh pendarahan haid ${durHaid} hari Anda di dalam sub-rentang ${K+1} s.d 30.`;
+          } else {
+            status = 'Ihtiyath';
+            reason = `Masa Kehati-hatian (Ihtiyath): Hari ke-${relDay} berkemungkinan menjadi awal, pertengahan, atau akhir haid ${durHaid} hari Anda di dalam sub-rentang ${K+1} s.d 30.`;
+          }
+        }
+      } else {
+        // fit1 && fit2 (Haid muat di kedua rentang)
+        status = 'Ihtiyath';
+        reason = `Masa Kehati-hatian (Ihtiyath): Haid adat Anda (${durHaid} hari) bisa diletakkan baik sebelum hari ke-${K} maupun sesudahnya, sehingga hari ke-${relDay} berada dalam posisi meragukan.`;
+      }
     }
 
-    statusTimeline.push({ 
-      day: d.dayNumber, 
-      date: d.date, 
-      status: status === 'Suci' ? 'Suci' : status as any, 
+    statusTimeline.push({
+      day: d.dayNumber,
+      date: d.date,
+      status: status === 'Suci' ? (d.isBlood ? 'Istihadloh' : 'Suci') : status as any,
       isBlood: d.isBlood,
-      reason 
+      reason,
+      isFirstMonthWaiting: isWaiting
     });
-    if (status === 'Ihtiyath' && d.dayNumber <= 15) {
-        if (d.isBlood) {
-            qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Ihtiyath - Darah Keluar). Karena status meragukan, sholat tetap wajib dilaksanakan, namun jika ditinggalkan wajib diqodlo.`);
-        } else {
-            qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Ihtiyath - Berhenti Darah). Masa meragukan (Ihtiyath) mewajibkan sholat diqodlo jika tidak dilaksanakan.`);
-        }
+
+    if (status === 'Haid' && isFirstMonth) {
+      qadhoObligations.push(`Sholat hari ke-${tgl} (Yakin Haid): Tidak perlu diqodlo karena dihukumi haid secara pasti.`);
+    } else if (status === 'Ihtiyath' && isFirstMonth && tgl <= 15) {
+      if (d.isBlood) {
+        qadhoObligations.push(`Sholat hari ke-${tgl}: Wajib diqodlo (Masa Kehati-hatian / Ihtiyath - Darah Keluar).`);
+      } else {
+        qadhoObligations.push(`Sholat hari ke-${tgl}: Wajib diqodlo (Masa Kehati-hatian / Ihtiyath - Darah Berhenti).`);
+      }
     }
   });
 
-  specialNotes.push("WAKTU YAKIN HAID: Dihukumi layaknya orang haid (Haram sholat, Quran, pasutri).");
-  specialNotes.push("WAKTU YAKIN SUCI: Dihukumi layaknya orang suci (Wajib ibadah, Halal pasutri).");
-  specialNotes.push(`WAKTU MUNGKIN HAID & SUCI (IHTIYATH): Dihukumi sebagaimana Mutahayyiroh. Khusus mandi, Anda HANYA wajib mandi besar pada masa yang mungkin mulai putusnya haid (yaitu hari ke-${endOfIntersection + 1} s.d hari ke-${rentangWaktu}).`);
+  specialNotes.push("HUKUM FASE YAKIN HAID (Jika Terbentuk Irisan):");
+  specialNotes.push("Berlaku penuh keharaman haid seluruhnya: Haram shalat, puasa Ramadhan, tawaf, bersetubuh (jima'), membaca Al-Qur'an secara lisan di luar shalat fardhu, dan memegang mushaf.");
+
+  specialNotes.push("HUKUM FASE IHTIYATH / KEHATI-HATIAN:");
+  specialNotes.push("Selama masa ini Anda dihukumi menyerupai wanita Mutahayyirah:");
+  specialNotes.push("1. Wajib shalat fardhu 5 waktu dan berpuasa fardhu Ramadhan.");
+  specialNotes.push("2. Haram bersetubuh (jima') dengan suami.");
+  specialNotes.push("3. Haram membaca Al-Qur'an secara lisan atau menyentuh mushaf di luar shalat.");
+  specialNotes.push("4. WAJIB mandi besar (ghusl) setiap kali hendak mengerjakan shalat fardhu baru, karena ada probabilitas haid Anda terputus/berhenti di setiap detiknya.");
+
+  specialNotes.push("HUKUM FASE YAKIN SUCI:");
+  specialNotes.push("Anda berstatus suci sepenuhnya:");
+  specialNotes.push("1. Wajib menunaikan ibadah fardhu (shalat, puasa).");
+  specialNotes.push("2. Halal bersetubuh (jima') dengan suami.");
+  specialNotes.push("3. Boleh membaca, menyentuh, dan membawa Al-Qur'an.");
+  specialNotes.push("4. Cukup bersuci biasa (istinja' + pembalut) dan berwudhu setiap masuk waktu shalat tanpa perlu mandi besar.");
+
+  if (isRamadhan) {
+    specialNotes.push("TENTANG PUASA RAMADHAN & CARA QODHO:");
+    specialNotes.push("1. Di Bulan Ramadhan: Anda wajib berpuasa penuh selama 30 hari karena kemungkinan sedang suci.");
+    if (K > 0) {
+      specialNotes.push(`💡 CARA QODHO YANG MUDAH (MEMANFAATKAN YAKIN SUCI): Karena Anda memiliki tanggal suci ke-${K} yang membagi siklus Anda, Anda memiliki hari-hari Yakin Suci di setiap bulannya. Lakukanlah puasa qodho hanya pada hari-hari Yakin Suci di bulan-bulan berikutnya demi menjamin keabsahan puasa qodho Anda secara mutlak tanpa keraguan.`);
+    } else {
+      specialNotes.push("2. Tata Cara Qodho (Metode Shafi'i - Lupa total waktu): Puasa Ramadhan yang dijalani tidak sah sepenuhnya sehingga Anda wajib mengqodho dengan pola 30 hari berturut-turut pasca Ramadhan (Tahap I), ditambah 6 hari pola khusus (Tahap II: puasa 3 hari, libur 12 hari, puasa 3 hari) agar menggenapkan 30 hari puasa yang suci.");
+    }
+  }
+
+  // Menentukan instruksi mandi berdasarkan sub-rentang end-points
+  const purificationInstructions = [
+    "Aturan Mandi Besar Pada Fase Ihtiyath (Kehati-hatian):",
+    "Karena haid berpeluang berhenti di setiap detiknya, Anda wajib mandi besar untuk setiap kali shalat fardhu hendak didirikan (1 kali mandi besar per 1 shalat fardhu)."
+  ];
+
+  if (K > 0) {
+    purificationInstructions.push("💡 ANALISIS HARI MANDI EFISIEN:");
+    if (fit1 && !fit2) {
+      purificationInstructions.push(`Berdasarkan perhitungan fiqh, haid Anda hanya berpeluang berhenti pada rentang hari ke-${durHaid} s.d ke-${K-1} di setiap siklus 30 hari Anda. Maka Anda HANYA wajib mandi besar setiap kali shalat fardhu pada tanggal-tanggal tersebut. Untuk tanggal lain (di masa Yakin Suci), Anda tidak perlu mandi, cukup berwudhu fardhu.`);
+    } else if (fit2 && !fit1) {
+      purificationInstructions.push(`Berdasarkan perhitungan fiqh, haid Anda hanya berpeluang berhenti pada rentang hari ke-${K + durHaid} s.d ke-30 di setiap siklus 30 hari Anda. Maka Anda HANYA wajib mandi besar setiap kali shalat fardhu pada tanggal-tanggal tersebut. Untuk tanggal lain (di masa Yakin Suci), Anda tidak perlu mandi, cukup berwudhu fardhu.`);
+    } else if (fit1 && fit2) {
+      purificationInstructions.push(`Haid Anda berpeluang berhenti pada rentang hari ke-${durHaid} s.d ke-${K-1} ATAU hari ke-${K + durHaid} s.d ke-30. Anda wajib mandi fardhu pada rentang-rentang tersebut.`);
+    }
+  } else {
+    purificationInstructions.push("Karena Anda tidak memiliki rujukan tanggal suci, probabilitas haid berhenti tersebar merata di seluruh hari. Oleh karena itu, Anda wajib melakukan mandi fardhu setiap kali akan shalat fardhu baru di sepanjang masa pendarahan ini.");
+  }
+
+  purificationInstructions.push(
+    "Langkah-langkah bersuci untuk setiap shalat fardhu di masa Ihtiyath:",
+    "1. Pastikan waktu shalat fardhu tersebut sudah masuk.",
+    "2. Bersihkan kemaluan dari darah dan kotoran (istinja').",
+    "3. Sumpat kemaluan dengan kapas/pembalut yang bersih dan rapat (kecuali sedang berpuasa di siang hari, cukup balut di luarnya saja).",
+    "4. Segera lakukan mandi besar (Ghusl) dengan niat untuk memperbolehkan shalat fardhu (Niat: 'Sengaja saya mandi fardhu karena istihadloh untuk kebolehan shalat fardhu' / 'نويت الغسل لاستباحة الفرض').",
+    "5. Segera lakukan wudhu setelah mandi tanpa jeda lama.",
+    "6. Segera laksanakan shalat fardhu tanpa menunda-nunda."
+  );
 
   let shortCategory = "ISTIHADLOH (MU'TADAH GHOIRU MUMAYYIZAH DZAKIROH LI'ADATIHA QODRON LA WAQTAN)";
   const baseSummary = buildFiqhAnalysisSummary(category, statusTimeline, days);
@@ -1646,10 +1838,10 @@ export function evaluateMutadahIngatDurasiLupaWaktu(days: DayStrength[], habit: 
     category,
     shortCategory,
     statusTimeline,
-    purificationInstructions: [`Mandi besar pada masa kemungkinan putusnya haid (Antara hari ke-${endOfIntersection + 1} sampai ke-${rentangWaktu}).`],
+    purificationInstructions,
     qadhoObligations,
     specialNotes,
-    legalBasis: "Kitab Uyunul Masa-il Linnisa'."
+    legalBasis: "Kitab Al-Majmu' Syarh Al-Muhadzdzab, Hasyiyah Al-Bajuri, & Uyunul Masa-il Linnisa'."
   };
 }
 
@@ -1794,10 +1986,10 @@ export function analyzeFiqhLocal(data: FiqhAnalysisRequest): FiqhAnalysisResult 
         result = evaluateMutadahMumayyizah(days, defaultHabit, !!data.isFirstMonthIstihadloh);
       } else if (defaultHabit.retrospection === 'ingat_waktu') {
         // GOLONGAN 7: INGAT WAKTU MULAI, LUPA DURASI
-        result = evaluateMutadahIngatWaktuLupaDurasi(days, !!data.isFirstMonthIstihadloh);
+        result = evaluateMutadahIngatWaktuLupaDurasi(days, !!data.isFirstMonthIstihadloh, !!isRamadhan);
       } else if (defaultHabit.retrospection === 'ingat_durasi') {
         // GOLONGAN 6: INGAT DURASI, LUPA WAKTU MULAI
-        result = evaluateMutadahIngatDurasiLupaWaktu(days, defaultHabit, !!data.isFirstMonthIstihadloh);
+        result = evaluateMutadahIngatDurasiLupaWaktu(days, defaultHabit, !!data.isFirstMonthIstihadloh, !!isRamadhan);
       } else if (
         defaultHabit.retrospection === 'ingat_semua' || 
         defaultHabit.retrospection === 'ingat_angka_lupa_urutan'
@@ -1828,17 +2020,18 @@ export function analyzeFiqhLocal(data: FiqhAnalysisRequest): FiqhAnalysisResult 
 
   // Cleanup special notes to avoid hallucinations about intermittent bleeding
   if (!isTerputusFlow && result.specialNotes) {
-    result.specialNotes = result.specialNotes.filter(n => 
-      !n.includes("Setiap kali darah Anda berhenti") && 
-      !n.includes("terputus-putus") && 
-      !n.includes("jeda") &&
-      !n.includes("Hukum Jam'u")
-    );
+    result.specialNotes = result.specialNotes.filter(n => {
+      const lower = n.toLowerCase();
+      return !lower.includes("darah berhenti") && 
+             !lower.includes("terputus-putus") && 
+             !lower.includes("jeda") &&
+             !lower.includes("jam'u");
+    });
   }
 
   if (isTerputusFlow) {
     result.specialNotes = result.specialNotes || [];
-    const bloodHours = days.filter(d => d.isBlood).length * 24;
+    const bloodHours = calculateBloodHours(days);
     
     if (bloodHours < 24) {
       result.specialNotes.push("Hukum Berhenti (Darah Belum 24 Jam): Karena akumulasi darah belum mencapai 24 jam, Anda cukup membersihkan darah (istinja) dan berwudlu jika ingin sholat. Belum diwajibkan mandi besar.");
@@ -1854,9 +2047,111 @@ export function analyzeFiqhLocal(data: FiqhAnalysisRequest): FiqhAnalysisResult 
   if (isRamadhan && totalQodloPuasa > 0) {
     result.specialNotes = result.specialNotes || [];
     if (!result.specialNotes.some(n => n.includes("hutang qodlo puasa"))) {
-       result.specialNotes.push(`Status Puasa: Anda memiliki hutang qodlo puasa sebanyak ${totalQodloPuasa} hari. Hari jeda bersih di sela haid/nifas tetap wajib diqodlo jika bertepatan dengan puasa Ramadhan.`);
+       if (isTerputusFlow) {
+         result.specialNotes.push(`Status Puasa: Anda memiliki hutang qodlo puasa sebanyak ${totalQodloPuasa} hari. Hari jeda bersih di sela haid/nifas tetap wajib diqodlo jika bertepatan dengan puasa Ramadhan.`);
+       } else {
+         result.specialNotes.push(`Status Puasa: Anda memiliki hutang qodlo puasa sebanyak ${totalQodloPuasa} hari.`);
+       }
     }
   }
+
+function getCategoryReason(shortCategory: string, category: string, hasGaps: boolean = false): string {
+  const clean = (str: string) => (str || "")
+    .toUpperCase()
+    .replace(/[’']/g, "")
+    .replace(/\s+/g, " ");
+
+  const sc = clean(shortCategory);
+  const cat = clean(category);
+
+  // Mubtadi'ah Mumayyizah
+  if (sc.includes("MUBTADIAH MUMAYYIZAH") || cat.includes("MUBTADIAH MUMAYYIZAH")) {
+    if (sc.includes("FINNIFAS") || cat.includes("FINNIFAS") || cat.includes("NIFAS")) {
+      return "Pendarahan pasca-persalinan Anda melebihi batas maksimal nifas (60 hari). Karena ini adalah persalinan pertama Anda (Mubtadi'ah) dan Anda memiliki perbedaan kualitas sifat fisik darah (kuat seperti merah tua/pekat dan lemah seperti merah muda/kuning) yang memenuhi syarat Tamyiz, maka golongan Anda ditentukan sebagai Mubtadi'ah Mumayyizah Finnifas. Darah kuat dihukumi Nifas dan darah lemah dihukumi Istihadloh.";
+    }
+    return "Pendarahan Anda melebihi batas maksimal haid (15 hari). Karena Anda belum pernah mengalami haid sebelumnya (Mubtadi'ah) dan saat ini memiliki perbedaan kualitas sifat fisik darah (kuat seperti hitam/merah tua dan lemah seperti merah muda/kuning) yang memenuhi syarat Tamyiz, maka golongan Anda ditentukan sebagai Mubtadi'ah Mumayyizah. Darah kuat dihukumi Haid dan darah lemah dihukumi Istihadloh.";
+  }
+
+  // Mu'tadah Mumayyizah
+  if (sc.includes("MUTADAH MUMAYYIZAH") || cat.includes("MUTADAH MUMAYYIZAH")) {
+    if (sc.includes("FINNIFAS") || cat.includes("FINNIFAS") || cat.includes("NIFAS")) {
+      return "Pendarahan pasca-persalinan Anda melebihi batas maksimal nifas (60 hari). Karena Anda sudah memiliki riwayat nifas sebelumnya (Mu'tadah) dan Anda memiliki perbedaan kualitas sifat fisik darah (kuat dan lemah) yang memenuhi syarat Tamyiz, maka golongan Anda ditentukan sebagai Mu'tadah Mumayyizah Finnifas. Darah kuat dihukumi Nifas dan darah lemah dihukumi Istihadloh.";
+    }
+    return "Pendarahan Anda melebihi batas maksimal haid (15 hari). Karena Anda sudah memiliki adat haid sebelumnya (Mu'tadah) dan saat ini memiliki perbedaan kualitas sifat fisik darah (kuat dan lemah) yang memenuhi syarat Tamyiz, maka golongan Anda ditentukan sebagai Mu'tadah Mumayyizah. Darah kuat dihukumi Haid dan darah lemah dihukumi Istihadloh.";
+  }
+
+  // Mubtadi'ah Ghoiru Mumayyizah
+  if (sc.includes("MUBTADIAH GHOIRU MUMAYYIZAH") || cat.includes("MUBTADIAH GHOIRU MUMAYYIZAH")) {
+    if (sc.includes("FINNIFAS") || cat.includes("FINNIFAS") || cat.includes("NIFAS")) {
+      return "Pendarahan pasca-persalinan Anda melebihi batas maksimal nifas (60 hari). Karena ini adalah persalinan pertama Anda (Mubtadi'ah) dan karakter sifat darah Anda monoton/sama rata sehingga tidak memenuhi syarat Tamyiz (Ghoiru Mumayyizah), maka nifas Anda dihukumi sekejap (setetes) dan sisa harinya dihukumi Istihadloh.";
+    }
+    return "Pendarahan Anda melebihi batas maksimal haid (15 hari). Karena Anda baru pertama kali haid (Mubtadi'ah) dan sifat fisik darah Anda monoton/sama rata sehingga tidak memenuhi syarat Tamyiz (Ghoiru Mumayyizah), maka haid Anda dikembalikan ke batas minimal yaitu 1 hari (24 jam) dan 29 hari berikutnya dihukumi Istihadloh (Siklus 30 hari).";
+  }
+
+  // Mutahayyiroh / Nasiyah
+  if (sc.includes("MUTAHAYYIROH") || sc.includes("NASIYAH") || cat.includes("MUTAHAYYIROH") || cat.includes("NASIYAH")) {
+    if (sc.includes("FINNIFAS") || cat.includes("FINNIFAS") || cat.includes("NIFAS")) {
+      return "Pendarahan pasca-persalinan Anda melebihi batas maksimal nifas (60 hari). Karena darah Anda tidak bisa dibedakan (Ghoiru Mumayyizah) dan Anda lupa total durasi serta waktu adat nifas lama Anda (Nasiyah / Mutahayyiroh), maka diterapkan hukum Ihtiyath (kehati-hatian) di mana Anda wajib mandi besar untuk setiap sholat fardlu setelah lewat 60 hari.";
+    }
+    return "Pendarahan Anda melebihi batas maksimal haid (15 hari). Karena karakter darah tidak dapat dibedakan (Ghoiru Mumayyizah) serta Anda benar-benar lupa durasi (qodr) dan waktu mulai (waqt) adat haid Anda yang lalu, maka Anda termasuk golongan Mutahayyiroh (bingung). Hukum fiqh menetapkan perlunya beribadah dengan penuh kehati-hatian (Ihtiyath).";
+  }
+
+  // Dzakiroh li-adatiha qodron wa waqtan (Ingat angka & urutan/ingat adat)
+  if (sc.includes("QODRON WA WAQTAN") || cat.includes("QODRON WA WAQTAN") || (sc.includes("DZAKIROH LIADATIHA") && !sc.includes("LA WAQTAN") && !sc.includes("LA QODRON"))) {
+    if (sc.includes("FINNIFAS") || cat.includes("FINNIFAS") || cat.includes("NIFAS")) {
+      return "Pendarahan pasca-persalinan Anda melebihi batas maksimal nifas (60 hari). Karena darah Anda monoton (Ghoiru Mumayyizah) namun Anda mengingat dengan jelas durasi (qodr) dan waktu mulai (waqt) adat nifas Anda yang lalu, maka ketentuan hukum nifas dikembalikan sepenuhnya kepada adat nifas Anda yang lalu.";
+    }
+    return "Pendarahan Anda melebihi batas maksimal haid (15 hari). Karena sifat darah Anda monoton (Ghoiru Mumayyizah) namun Anda mengingat dengan jelas durasi (qodr) dan waktu mulai (waqt) adat haid bulanan Anda, maka nifas/haid Anda dikembalikan sepenuhnya kepada durasi adat haid Anda yang lalu.";
+  }
+
+  // Dzakiroh li-adatiha waqtan la qodron (Ingat waktu mulai, lupa durasi)
+  if (sc.includes("WAQTAN LA QODRON") || cat.includes("WAQTAN LA QODRON")) {
+    if (sc.includes("FINNIFAS") || cat.includes("FINNIFAS") || cat.includes("NIFAS")) {
+      return "Pendarahan pasca-persalinan Anda melebihi 60 hari dengan karakter darah monoton (Ghoiru Mumayyizah). Karena Anda hanya mengingat waktu mulai adat nifas lalu tetapi lupa durasinya, maka hukum yang diterapkan adalah gabungan kepastian waktu nifas dan Ihtiyath (kehati-hatian).";
+    }
+    return "Pendarahan Anda melebihi 15 hari dengan karakter darah monoton (Ghoiru Mumayyizah). Karena Anda hanya mengingat waktu mulainya saja (waqt) tetapi lupa durasinya (qodr), maka hukum yang diterapkan adalah kombinasi antara kepastian waktu mulai haid dan kehati-hatian (Ihtiyath) pada hari-hari kemungkinan berakhirnya haid.";
+  }
+
+  // Dzakiroh li-adatiha qodron la waqtan (Ingat durasi, lupa waktu mulai)
+  if (sc.includes("QODRON LA WAQTAN") || cat.includes("QODRON LA WAQTAN")) {
+    if (sc.includes("FINNIFAS") || cat.includes("FINNIFAS") || cat.includes("NIFAS")) {
+      return "Pendarahan pasca-persalinan Anda melebihi 60 hari dengan karakter darah monoton (Ghoiru Mumayyizah). Karena Anda hanya mengingat durasi adat nifas lalu tetapi lupa waktu mulainya, maka berlaku hukum Ihtiyath (kehati-hatian) pada hari-hari kemungkinan kemunculannya.";
+    }
+    return "Pendarahan Anda melebihi 15 hari dengan karakter darah monoton (Ghoiru Mumayyizah). Karena Anda hanya mengingat durasi adat saja (qodr) tetapi lupa tepatnya di tanggal/hari apa mulainya (waqt), maka berlaku hukum Ihtiyath (kehati-hatian) pada hari-hari kemungkinan dimulainya haid tersebut.";
+  }
+
+  // Mu'tadah Ghoiru Mumayyizah defaults
+  if (sc.includes("MUTADAH GHOIRU MUMAYYIZAH") || cat.includes("MUTADAH GHOIRU MUMAYYIZAH")) {
+    return "Pendarahan Anda melebihi batas maksimal haid (15 hari). Karena Anda sudah memiliki riwayat haid sebelumnya (Mu'tadah) namun sifat fisik darah Anda monoton (Ghoiru Mumayyizah), maka masa haid dikembalikan sepenuhnya ke adat haid Anda yang lalu.";
+  }
+
+  // Haidl Normal / Nifas Normal
+  if (sc.includes("HAIDL NORMAL") || cat.includes("HAIDL NORMAL") || sc.includes("NORMAL HAID")) {
+    return hasGaps 
+      ? "Darah Anda keluar dalam rentang waktu normal haid (antara 24 jam s.d. 15 hari) dan dipisahkan dengan masa suci/jeda di antaranya, sehingga seluruh hari pendarahan dan masa jeda di antaranya dihukumi sebagai darah haid berdasarkan kaidah Jam'u/Talfiq."
+      : "Darah Anda keluar dalam rentang waktu normal haid (antara 24 jam s.d. 15 hari) secara terus-menerus tanpa terputus, sehingga seluruh pendarahan dihukumi sebagai darah haid.";
+  }
+  if (sc.includes("NIFAS NORMAL") || cat.includes("NIFAS NORMAL") || sc.includes("NORMAL NIFAS")) {
+    return hasGaps 
+      ? "Pendarahan pasca-melahirkan Anda keluar dalam rentang waktu yang wajar (tidak melebihi batas maksimal nifas 60 hari) dan dipisahkan dengan masa suci/jeda di antaranya, sehingga seluruh hari pendarahan dan masa jeda di antaranya dihukumi sebagai darah nifas berdasarkan kaidah Jam'u/Talfiq."
+      : "Pendarahan pasca-melahirkan Anda keluar dalam rentang waktu yang wajar (tidak melebihi batas maksimal nifas 60 hari) secara terus-menerus tanpa terputus, sehingga seluruh pendarahan dihukumi sebagai darah nifas.";
+  }
+
+  // Pemisah Siklus Mutlak / Dua Siklus Terpisah
+  if (sc.includes("TERPISAH") || cat.includes("TERPISAH") || cat.includes("PEMISAH")) {
+    return "Ditemukan jeda bersih/masa suci sebanyak 15 hari atau lebih di sela-sela pendarahan Anda, yang secara hukum fardhu memisahkan pendarahan lama dengan pendarahan baru sebagai dua siklus haid yang berbeda.";
+  }
+
+  if (sc.includes("BELUM CUKUP") || cat.includes("BELUM CUKUP")) {
+    return "Usia Anda belum genap batas minimal usia haid (9 tahun Hijriyah kurang 16 hari), sehingga seluruh pendarahan yang keluar belum bisa dihukumi sebagai darah haid melainkan darah penyakit (Istihadloh).";
+  }
+
+  if (cat.includes("FASAD")) {
+    return "Akumulasi darah yang Anda alami di dalam rentang 15 hari jika dijumlahkan ternyata kurang dari batas minimal haid yaitu 24 jam, sehingga pendarahan tersebut digolongkan sebagai darah penyakit / darah rusak (Fasad) dan tidak menggugurkan kewajiban sholat fardlu.";
+  }
+
+  return "Penetapan ini didasarkan pada analisis durasi, jeda suci, dan sifat darah Anda terhadap kaidah dasar fikih haid dan nifas menurut Mazhab Syafi'i.";
+}
 
   const finalResult = {
     ...result,
@@ -1864,8 +2159,16 @@ export function analyzeFiqhLocal(data: FiqhAnalysisRequest): FiqhAnalysisResult 
     totalQodloPuasa
   };
 
+  const statusTimelineParsed = finalResult.statusTimeline || [];
+  const parsedBloodIndices = statusTimelineParsed
+    .map((item: any, idx: number) => item.isBlood ? idx : -1)
+    .filter((idx: number) => idx !== -1);
+  const hasGaps = parsedBloodIndices.length > 1 && 
+    (parsedBloodIndices[parsedBloodIndices.length - 1] - parsedBloodIndices[0] + 1) > parsedBloodIndices.length;
+
   return {
     ...finalResult,
+    categoryReason: getCategoryReason(finalResult.shortCategory || "", finalResult.category || "", hasGaps),
     groupedTimeline: groupTimeline(finalResult.statusTimeline),
     groupedQadho: groupQodlo(finalResult.qadhoObligations)
   };

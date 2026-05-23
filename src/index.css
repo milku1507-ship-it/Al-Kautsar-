@@ -1,9 +1,11 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@300..700&family=Quicksand:wght@300..700&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Plus Jakarta Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-serif: "Playfair Display", serif;
+  --font-sans: "Quicksand", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Fredoka", "Quicksand", sans-serif;
+  --font-display: "Fredoka", "Quicksand", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
   
   --color-bg-main: var(--bg-main);
   --color-bg-side: var(--bg-side);
@@ -13,33 +15,35 @@
   --color-text-main: var(--text-main);
   --color-text-muted: var(--text-muted);
   --color-text-contrast: var(--text-contrast);
-  --color-accent: #10b981; /* emerald-500 */
+  --color-accent: var(--accent);
 }
 
 :root {
-  --bg-main: #0c0d10;
-  --bg-side: #0f1115;
-  --bg-card: #161b22;
-  --bg-bottom: #0a0c10;
-  --border-main: #1e293b;
-  --text-main: #e2e8f0;
-  --text-muted: #94a3b8;
-  --text-contrast: #ffffff;
+  --bg-main: #FFF4F6;       /* Extremely beautiful soft baby pink background */
+  --bg-side: #FFF9FA;       /* Ultra-soft warm pinkish white side panel */
+  --bg-card: #ffffff;       /* Pure white card */
+  --bg-bottom: #FFF0F2;     /* Slight darker pink for bottom bars/headers */
+  --border-main: #FFE2E6;   /* Soft, clean, delicate pink border */
+  --text-main: #2D2527;     /* High-contrast beautiful warm deep-charcoal (almost black/deep rose plum) */
+  --text-muted: #8E7A7D;    /* Gentle grey-plum for helper text */
+  --text-contrast: #1A1112; /* Rich dark-plum color for main headings */
+  --accent: #FF528F;        /* The bright, delightful focus pink from user's screenshot */
 }
 
-[data-theme="light"] {
-  --bg-main: #f8fafc;
-  --bg-side: #ffffff;
-  --bg-card: #ffffff;
-  --bg-bottom: #f1f5f9;
-  --border-main: #e2e8f0;
-  --text-main: #0f172a;
-  --text-muted: #64748b;
-  --text-contrast: #0f172a;
+[data-theme="dark"] {
+  --bg-main: #1C1215;       /* Deep plum/dark chocolate cherry */
+  --bg-side: #251B1E;       /* Slightly lighter deep plum */
+  --bg-card: #2D2125;       /* Rich card background */
+  --bg-bottom: #160D10;     /* Ultra-dark plum */
+  --border-main: #423035;   /* Subtle chocolate-pink helper lines */
+  --text-main: #F4EAEB;     /* Soft warm white */
+  --text-muted: #AA9598;    /* Muted soft pinkish grey */
+  --text-contrast: #FFFFFF; /* High contrast white */
+  --accent: #FF669F;        /* Bright neon pastel pink */
 }
 
 body {
-  @apply font-sans bg-bg-main text-text-main overflow-x-hidden;
+  @apply font-sans font-bold bg-bg-main text-text-main overflow-x-hidden;
 }
 
 .custom-scrollbar::-webkit-scrollbar {

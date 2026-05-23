@@ -10,6 +10,8 @@ export interface DayRecord {
   color?: BloodColor;
   texture?: BloodTexture;
   aroma?: BloodAroma;
+  durationHours?: number; // Jam keluar darah (bisa 0 s/d 24)
+  durationMinutes?: number; // Menit keluar darah (bisa 0 s/d 59)
 }
 
 export type ExperienceStatus = 'mubtadiah' | 'mutadah';
@@ -75,6 +77,7 @@ export interface FiqhAnalysisResult {
     message: string;
   }[];
   category: string;
+  categoryReason?: string;
   shortCategory: string;
   purificationInstructions: string[];
   qadhoObligations: string[];

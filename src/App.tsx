@@ -88,6 +88,12 @@ export default function App() {
   // Step 2: Kalender Darah
   const [records, setRecords] = useState<DayRecord[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  
+  const activeRecord = useMemo(() => {
+    if (!selectedDate) return null;
+    return records.find(r => isSameDay(parseISO(r.date), selectedDate)) || null;
+  }, [selectedDate, records]);
+
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [currentCalendarDate, setCurrentCalendarDate] = useState(new Date(2026, 4, 1)); // Mei 2026
 
@@ -115,9 +121,8 @@ export default function App() {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('theme');
       if (saved === 'light' || saved === 'dark') return saved;
-      return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
     }
-    return 'dark';
+    return 'light';
   });
 
   useEffect(() => {
@@ -146,7 +151,9 @@ export default function App() {
         status: 'darah' as const,
         color: template?.color || exists?.color || 'merah' as BloodColor,
         texture: template?.texture || exists?.texture || 'cair' as BloodTexture,
-        aroma: template?.aroma || exists?.aroma || 'tidak_busuk' as BloodAroma
+        aroma: template?.aroma || exists?.aroma || 'tidak_busuk' as BloodAroma,
+        durationHours: template?.durationHours !== undefined ? template?.durationHours : (exists?.durationHours !== undefined ? exists.durationHours : 24),
+        durationMinutes: template?.durationMinutes !== undefined ? template?.durationMinutes : (exists?.durationMinutes !== undefined ? exists.durationMinutes : 0)
       };
 
       if (exists) {
@@ -236,7 +243,7 @@ export default function App() {
   const renderStep1 = () => (
     <div className="space-y-6 md:space-y-8">
       <div className="space-y-4">
-        <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">TANGGAL LAHIR</h3>
+        <h3 className="text-xs font-black uppercase tracking-widest text-text-contrast font-display">Tanggal Lahir</h3>
         <input 
             type="date"
             value={birthDateMasehi}
@@ -251,15 +258,15 @@ export default function App() {
                 }
             }}
             max={new Date().toISOString().split('T')[0]}
-            className="w-full bg-bg-card border border-border-main p-2.5 md:p-3 rounded-lg text-sm text-text-contrast focus:outline-none focus:border-accent"
+            className="w-full bg-bg-card border border-border-main p-3 md:p-4 rounded-xl text-sm text-text-contrast font-bold focus:outline-none focus:border-accent"
         />
-        <div className="p-3 bg-accent/10 border border-accent/20 rounded-lg text-sm text-text-contrast font-bold italic">
+        <div className="p-3.5 bg-accent/15 border border-accent/25 rounded-xl text-xs text-text-contrast font-black italic">
            Usia Hijriyah Anda: {ageYears} Tahun, {ageMonths} Bulan, {ageDays} Hari
         </div>
         
         {ageYears < 9 && (
-          <div className="p-3 bg-red-950/20 border border-red-900/50 rounded-lg flex gap-3 text-[10px] text-red-400 italic">
-            <AlertCircle className="w-3 h-3 flex-shrink-0" />
+          <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex gap-3 text-xs text-red-600 dark:text-red-400 font-bold italic">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
             <span>Usia minimal untuk Haid adalah 9 tahun Qomariyah kurang 16 hari.</span>
           </div>
         )}
@@ -267,13 +274,13 @@ export default function App() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
         <div className="space-y-4">
-          <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">Kondisi Awal</h3>
+          <h3 className="text-xs font-black uppercase tracking-widest text-text-contrast font-display">Kondisi Awal</h3>
           <div className="flex gap-3">
             <button 
               onClick={() => setContext('haid')}
               className={cn(
-                "flex-1 py-4 md:py-6 px-3 md:px-4 rounded-xl border transition-all flex flex-col items-center gap-2 md:gap-3",
-                context === 'haid' ? "border-red-500 bg-red-950/20 text-red-400" : "border-border-main bg-bg-card hover:border-red-900/50"
+                "flex-1 py-4 md:py-6 px-3 md:px-4 rounded-2xl border transition-all flex flex-col items-center gap-2 md:gap-3",
+                context === 'haid' ? "border-accent bg-accent/20 text-accent font-black shadow-lg shadow-accent/10" : "border-border-main bg-bg-card hover:border-accent/40 hover:text-text-contrast text-text-muted"
               )}
             >
               <Droplet className="w-5 h-5 md:w-6 md:h-6" />
@@ -282,8 +289,8 @@ export default function App() {
             <button 
               onClick={() => setContext('nifas')}
               className={cn(
-                "flex-1 py-4 md:py-6 px-3 md:px-4 rounded-xl border transition-all flex flex-col items-center gap-2 md:gap-3",
-                context === 'nifas' ? "border-purple-500 bg-purple-950/20 text-purple-400" : "border-border-main bg-bg-card hover:border-purple-900/50"
+                "flex-1 py-4 md:py-6 px-3 md:px-4 rounded-2xl border transition-all flex flex-col items-center gap-2 md:gap-3",
+                context === 'nifas' ? "border-accent bg-accent/20 text-accent font-black shadow-lg shadow-accent/10" : "border-border-main bg-bg-card hover:border-accent/40 hover:text-text-contrast text-text-muted"
               )}
             >
               <Droplet className="w-5 h-5 md:w-6 md:h-6" />
@@ -293,13 +300,13 @@ export default function App() {
         </div>
 
         <div className="space-y-4">
-          <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">Status Pengalaman</h3>
+          <h3 className="text-xs font-black uppercase tracking-widest text-text-contrast font-display">Status Pengalaman</h3>
           <div className="flex gap-3">
             <button 
               onClick={() => setExperience('mubtadiah')}
               className={cn(
-                "flex-1 py-4 md:py-6 px-3 md:px-4 rounded-xl border transition-all flex flex-col items-center gap-2 md:gap-3",
-                experience === 'mubtadiah' ? "border-blue-500 bg-blue-950/20 text-blue-400" : "border-border-main bg-bg-card hover:border-blue-900/50"
+                "flex-1 py-4 md:py-6 px-3 md:px-4 rounded-2xl border transition-all flex flex-col items-center gap-2 md:gap-3",
+                experience === 'mubtadiah' ? "border-accent bg-accent/20 text-accent font-black shadow-lg shadow-accent/10" : "border-border-main bg-bg-card hover:border-accent/40 hover:text-text-contrast text-text-muted"
               )}
             >
               <CheckCircle2 className="w-5 h-5 md:w-6 md:h-6" />
@@ -308,8 +315,8 @@ export default function App() {
             <button 
               onClick={() => setExperience('mutadah')}
               className={cn(
-                "flex-1 py-4 md:py-6 px-3 md:px-4 rounded-xl border transition-all flex flex-col items-center gap-2 md:gap-3",
-                experience === 'mutadah' ? "border-green-500 bg-green-950/20 text-green-400" : "border-border-main bg-bg-card hover:border-green-900/50"
+                "flex-1 py-4 md:py-6 px-3 md:px-4 rounded-2xl border transition-all flex flex-col items-center gap-2 md:gap-3",
+                experience === 'mutadah' ? "border-accent bg-accent/20 text-accent font-black shadow-lg shadow-accent/10" : "border-border-main bg-bg-card hover:border-accent/40 hover:text-text-contrast text-text-muted"
               )}
             >
               <History className="w-5 h-5 md:w-6 md:h-6" />
@@ -325,29 +332,29 @@ export default function App() {
                 exit={{ opacity: 0, height: 0 }}
                 className="pt-4 border-t border-border-main space-y-4 overflow-hidden"
               >
-                <div className="p-4 bg-blue-950/20 border border-blue-900/50 rounded-xl space-y-4">
-                  <h4 className="text-xs font-black text-blue-400 uppercase tracking-widest">Informasi Tambahan Nifas</h4>
+                <div className="p-4 bg-accent/5 border border-border-main rounded-xl space-y-4">
+                  <h4 className="text-xs font-black text-accent uppercase tracking-widest">Informasi Tambahan Nifas</h4>
                   <div className="space-y-4">
-                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">Waktu Persalinan</h3>
+                    <h3 className="text-xs font-black uppercase tracking-widest text-text-contrast font-display">Waktu Persalinan</h3>
                     <div className="space-y-2">
-                      <label className="text-[10px] text-slate-400 uppercase">Input Tanggal & Jam PERSALINAN</label>
+                      <label className="text-[10px] font-extrabold text-text-muted uppercase">Input Tanggal & Jam PERSALINAN</label>
                       <input 
                         type="datetime-local" 
                         value={laborDate} 
                         onChange={e => setLaborDate(e.target.value)}
                         className="w-full bg-bg-card border border-border-main p-3 rounded-xl text-sm text-text-contrast focus:outline-none focus:border-accent"
                       />
-                      <p className="text-[9px] text-slate-500 italic">Dibutuhkan untuk menghitung batas maksimal nifas 60 hari.</p>
+                      <p className="text-[10px] text-text-muted italic">Dibutuhkan untuk menghitung batas maksimal nifas 60 hari.</p>
                     </div>
 
                     <div className="pt-4 border-t border-border-main/20">
-                      <p className="text-[10px] text-slate-400 mb-3 uppercase font-bold text-blue-400">Pernah Haidl Sebelumnya?</p>
+                      <p className="text-[10px] mb-3 uppercase font-black text-text-contrast">Pernah Haidl Sebelumnya?</p>
                       <div className="flex gap-3">
                         <button 
                           onClick={() => setHabit({...habit, pernahHaid: false})}
                           className={cn(
-                            "flex-1 py-3 px-2 rounded-lg border text-[9px] font-bold uppercase tracking-widest transition-all",
-                            habit.pernahHaid === false ? "bg-red-500 text-white border-red-500" : "bg-bg-card text-slate-500 border-border-main"
+                            "flex-1 py-3 px-2 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
+                            habit.pernahHaid === false ? "bg-red-500 text-white border-red-500 shadow-md" : "bg-bg-card text-text-muted border-border-main"
                           )}
                         >
                           Belum Pernah
@@ -355,8 +362,8 @@ export default function App() {
                         <button 
                           onClick={() => setHabit({...habit, pernahHaid: true})}
                           className={cn(
-                            "flex-1 py-3 px-2 rounded-lg border text-[9px] font-bold uppercase tracking-widest transition-all",
-                            habit.pernahHaid === true ? "bg-emerald-500 text-white border-emerald-500" : "bg-bg-card text-slate-500 border-border-main"
+                            "flex-1 py-3 px-2 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
+                            habit.pernahHaid === true ? "bg-emerald-500 text-white border-emerald-500 shadow-md" : "bg-bg-card text-text-muted border-border-main"
                           )}
                         >
                           Sudah Pernah
@@ -374,20 +381,22 @@ export default function App() {
             <button 
                 onClick={() => setIsRamadhan(!isRamadhan)}
                 className={cn(
-                    "w-full flex items-center justify-between p-4 rounded-xl border transition-all",
-                    isRamadhan ? "bg-emerald-950/20 border-emerald-500 text-emerald-400" : "bg-bg-card border-border-main text-slate-500"
+                    "w-full flex items-center justify-between p-5 rounded-2xl border transition-all cursor-pointer",
+                    isRamadhan 
+                      ? "bg-accent/20 border-accent text-accent shadow-lg shadow-accent/10" 
+                      : "bg-bg-card border-border-main text-text-contrast hover:border-accent/40"
                 )}
             >
                 <div className="flex items-center gap-3">
-                    <Target className={cn("w-5 h-5", isRamadhan ? "text-emerald-500" : "text-slate-500")} />
+                    <Target className={cn("w-5 h-5", isRamadhan ? "text-accent" : "text-text-muted")} />
                     <div className="text-left">
                         <div className="text-xs font-black uppercase tracking-widest leading-none">Bulan Ramadhan / Puasa Wajib</div>
-                        <div className="text-[9px] lowercase opacity-60 mt-1">Aktifkan untuk kalkulasi qodlo puasa otomatis</div>
+                        <div className="text-[10px] font-bold text-text-muted lowercase mt-1.5">Aktifkan untuk kalkulasi qodlo puasa otomatis</div>
                     </div>
                 </div>
                 <div className={cn(
                     "w-10 h-5 rounded-full relative transition-colors",
-                    isRamadhan ? "bg-emerald-500" : "bg-slate-800"
+                    isRamadhan ? "bg-accent" : "bg-border-main"
                 )}>
                     <div className={cn(
                         "absolute top-1 w-3 h-3 bg-white rounded-full transition-transform",
@@ -420,37 +429,37 @@ export default function App() {
 
     return (
       <div className="space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-bg-card p-4 rounded-xl border border-border-main">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-bg-card p-4 rounded-3xl border border-border-main shadow-sm">
           <div className="flex items-center gap-4">
             <button 
               onClick={prevMonth}
               disabled={currentCalendarDate.getMonth() === 0}
-              className="p-2 hover:bg-slate-800 rounded-lg disabled:opacity-20 disabled:cursor-not-allowed"
+              className="p-2 hover:bg-bg-side hover:text-accent rounded-xl disabled:opacity-20 disabled:cursor-not-allowed transition-all"
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
-            <h3 className="text-base font-black uppercase tracking-widest min-w-[120px] text-center">
+            <h3 className="text-base font-black uppercase tracking-widest min-w-[120px] text-center text-text-contrast font-display">
               {format(currentCalendarDate, 'MMMM yyyy', { locale: id })}
             </h3>
             <button 
               onClick={nextMonth}
               disabled={currentCalendarDate.getMonth() === 11}
-              className="p-2 hover:bg-slate-800 rounded-lg disabled:opacity-20 disabled:cursor-not-allowed"
+              className="p-2 hover:bg-bg-side hover:text-accent rounded-xl disabled:opacity-20 disabled:cursor-not-allowed transition-all"
             >
               <ChevronRight className="w-5 h-5" />
             </button>
           </div>
           <button 
             onClick={resetCalendar}
-            className="flex items-center justify-center gap-2 px-4 py-2 bg-red-950/20 text-red-500 border border-red-900/30 rounded-lg text-[10px] font-bold uppercase hover:bg-red-900/30 transition-all"
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 rounded-xl text-[10px] font-bold uppercase hover:bg-red-500/20 transition-all cursor-pointer"
           >
             <Trash2 className="w-3.5 h-3.5" /> Reset Kalender
           </button>
         </div>
 
-        <div className="grid grid-cols-7 gap-px bg-border-main border border-border-main rounded-lg overflow-hidden translate-z-0">
-          {['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Aha'].map((d, idx) => (
-            <div key={`${d}-${idx}`} className="bg-bg-card p-2 text-center text-[9px] font-black text-slate-500 uppercase">
+        <div className="grid grid-cols-7 gap-2 bg-bg-card p-4 rounded-3xl border border-border-main shadow-sm translate-z-0">
+          {['S', 'S', 'R', 'K', 'J', 'S', 'M'].map((d, idx) => (
+            <div key={`${d}-${idx}`} className="p-2 text-center text-xs font-bold text-text-muted uppercase">
               {d}
             </div>
           ))}
@@ -503,43 +512,46 @@ export default function App() {
                   setSelectedDate(d);
                 }}
                 className={cn(
-                  "aspect-square p-1 relative transition-all text-left flex flex-col group",
-                  !isCurrentMonth ? "bg-bg-main/50 opacity-30" : "bg-bg-main hover:bg-bg-card",
-                  record && "bg-red-950/20 border-2 border-red-500/30",
-                  isLaborDay && "bg-purple-950/30 border-2 border-purple-500/50",
-                  isAnchor && "ring-2 ring-accent ring-inset"
+                  "aspect-square relative transition-all text-center flex flex-col items-center justify-center rounded-full text-xs font-bold focus:outline-none cursor-pointer",
+                  !isCurrentMonth ? "opacity-25 bg-transparent text-text-muted pointer-events-none" : "bg-bg-main hover:bg-accent/10 hover:text-accent text-text-main",
+                  record && "shadow-lg scale-102 hover:opacity-95 font-black border border-white/10",
+                  isLaborDay && "bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/30 rounded-full",
+                  isAnchor && "ring-4 ring-accent/40 ring-offset-2 ring-offset-bg-card"
                 )}
+                style={record ? (
+                  record.color === 'hitam' ? { backgroundColor: '#18181b', color: '#ffffff' } :
+                  record.color === 'merah' ? { backgroundColor: '#e11d48', color: '#ffffff' } :
+                  record.color === 'coklat' ? { backgroundColor: '#78350f', color: '#ffffff' } :
+                  record.color === 'kuning' ? { backgroundColor: '#eab308', color: '#0f172a' } :
+                  record.color === 'keruh' ? { backgroundColor: '#64748b', color: '#ffffff' } :
+                  { backgroundColor: 'var(--color-accent)', color: '#ffffff' }
+                ) : undefined}
               >
-                <span className={cn(
-                  "text-[10px] font-bold", 
-                  record ? "text-text-contrast" : (isLaborDay ? "text-purple-400" : "text-slate-600")
-                )}>
+                <span className="z-10">
                   {format(d, 'd')}
                 </span>
                 
                 {isLaborDay && (
                   <div className="absolute top-1 right-1">
-                    <Baby className="w-3 h-3 text-purple-500" />
+                    <Baby className="w-2.5 h-2.5 text-purple-600 dark:text-purple-400" />
                   </div>
                 )}
 
                 {isAnchor && !isLaborDay && (
-                  <div className="absolute top-1 right-1 flex gap-0.5">
+                  <div className="absolute top-1 right-1 flex gap-0.5 z-20">
                     <div className="w-1.5 h-1.5 bg-accent rounded-full animate-ping" />
                     <div className="w-1.5 h-1.5 bg-accent rounded-full absolute" />
                   </div>
                 )}
 
                 {record && (
-                  <div className="absolute inset-x-1 bottom-1 flex flex-col gap-0.5 pointer-events-none">
-                    <div className={cn(
-                      "w-full h-1 rounded-full",
-                      record.color === 'hitam' ? "bg-black" :
-                      record.color === 'merah' ? "bg-red-600" :
-                      record.color === 'coklat' ? "bg-amber-900" :
-                      record.color === 'kuning' ? "bg-yellow-400" : "bg-slate-500"
-                    )} />
-                  </div>
+                  <div className="absolute bottom-1 w-1.5 h-1.5 rounded-full pointer-events-none z-10" style={{
+                    backgroundColor: 
+                      record.color === 'hitam' ? "#000000" :
+                      record.color === 'merah' ? "#E11D48" :
+                      record.color === 'coklat' ? "#78350F" :
+                      record.color === 'kuning' ? "#CA8A04" : "#6B7280"
+                  }} />
                 )}
               </button>
             );
@@ -549,66 +561,114 @@ export default function App() {
         <div className="flex flex-wrap gap-4 items-center justify-center p-4 bg-bg-card/50 rounded-xl border border-border-main/50">
             <div className="flex items-center gap-1.5 grayscale opacity-50">
                 <div className="w-2 h-2 bg-slate-800 rounded-sm" />
-                <span className="text-[9px] uppercase font-bold text-slate-500">Suci</span>
+                <span className="text-[10px] uppercase font-black text-text-muted">Suci</span>
             </div>
             <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 bg-red-600 rounded-sm" />
-                <span className="text-[9px] uppercase font-bold text-slate-500">Berdarah</span>
+                <span className="text-[10px] uppercase font-black text-text-muted">Berdarah</span>
             </div>
-            <p className="text-[9px] text-slate-400 italic w-full text-center mt-2 leading-relaxed">
-                <span className="text-accent font-bold">Cara Cepat:</span> Tap satu tanggal sebagai awal, lalu tap tanggal lain untuk mengisi semua hari di antaranya secara otomatis.
+            <p className="text-[10px] text-text-main italic w-full text-center mt-2 leading-relaxed">
+                <span className="text-accent font-black">Cara Cepat:</span> Tap satu tanggal sebagai awal, lalu tap tanggal lain untuk mengisi semua hari di antaranya secara otomatis.
             </p>
         </div>
 
-        {selectedDate && records.find(r => isSameDay(parseISO(r.date), selectedDate)) && (
+        {selectedDate && activeRecord && (
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             className="p-6 bg-bg-card rounded-xl border border-border-main space-y-6"
           >
             <div className="flex justify-between items-center border-b border-border-main pb-4">
-              <h3 className="text-base font-black uppercase tracking-widest text-accent">
+              <h3 className="text-base font-black uppercase tracking-widest text-accent font-display">
                 Detail Karakteristik: {format(selectedDate, 'd MMMM yyyy', { locale: id })}
               </h3>
-              <button onClick={() => setSelectedDate(null)} className="text-xs uppercase font-black text-slate-500 hover:text-text-contrast">Tutup</button>
+              <button onClick={() => setSelectedDate(null)} className="text-xs uppercase font-black text-text-muted hover:text-accent cursor-pointer transition-colors">Tutup</button>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               <div className="space-y-3">
-                <label className="text-xs font-black uppercase text-slate-500">Warna (Hierarki Tamyiz)</label>
+                <label className="text-xs font-black uppercase text-text-main">Warna (Hierarki Tamyiz)</label>
                 <select 
-                  className="w-full bg-bg-main border border-border-main p-2 rounded-lg text-xs text-white focus:outline-none focus:border-accent"
-                  value={records.find(r => isSameDay(parseISO(r.date), selectedDate))?.color}
+                  className="w-full bg-bg-main border border-border-main p-3 rounded-xl text-xs text-text-contrast font-bold focus:outline-none focus:border-accent"
+                  value={activeRecord?.color}
                   onChange={(e) => updateDayRecord(selectedDate, { color: e.target.value as BloodColor })}
                 >
-                  <option value="hitam">Hitam (Paling Kuat)</option>
-                  <option value="merah">Merah</option>
-                  <option value="coklat">Coklat</option>
-                  <option value="kuning">Kuning</option>
-                  <option value="keruh">Keruh (Paling Lemah)</option>
+                  <option value="hitam" className="text-text-contrast bg-bg-card">Hitam (Paling Kuat)</option>
+                  <option value="merah" className="text-text-contrast bg-bg-card">Merah</option>
+                  <option value="coklat" className="text-text-contrast bg-bg-card">Coklat</option>
+                  <option value="kuning" className="text-text-contrast bg-bg-card">Kuning</option>
+                  <option value="keruh" className="text-text-contrast bg-bg-card">Keruh (Paling Lemah)</option>
                 </select>
               </div>
               <div className="space-y-3">
-                <label className="text-xs font-black uppercase text-slate-500">Tekstur</label>
+                <label className="text-xs font-black uppercase text-text-main">Tekstur</label>
                 <select 
-                  className="w-full bg-bg-main border border-border-main p-2 rounded-lg text-xs text-white focus:outline-none focus:border-accent"
-                  value={records.find(r => isSameDay(parseISO(r.date), selectedDate))?.texture}
+                  className="w-full bg-bg-main border border-border-main p-3 rounded-xl text-xs text-text-contrast font-bold focus:outline-none focus:border-accent"
+                  value={activeRecord?.texture}
                   onChange={(e) => updateDayRecord(selectedDate, { texture: e.target.value as BloodTexture })}
                 >
-                  <option value="kental">Kental (Lebih Kuat)</option>
-                  <option value="cair">Cair</option>
+                  <option value="kental" className="text-text-contrast bg-bg-card">Kental (Lebih Kuat)</option>
+                  <option value="cair" className="text-text-contrast bg-bg-card">Cair</option>
                 </select>
               </div>
               <div className="space-y-3">
-                <label className="text-xs font-black uppercase text-slate-500">Aroma</label>
+                <label className="text-xs font-black uppercase text-text-main">Aroma</label>
                 <select 
-                  className="w-full bg-bg-main border border-border-main p-2 rounded-lg text-xs text-white focus:outline-none focus:border-accent"
-                  value={records.find(r => isSameDay(parseISO(r.date), selectedDate))?.aroma}
+                  className="w-full bg-bg-main border border-border-main p-3 rounded-xl text-xs text-text-contrast font-bold focus:outline-none focus:border-accent"
+                  value={activeRecord?.aroma}
                   onChange={(e) => updateDayRecord(selectedDate, { aroma: e.target.value as BloodAroma })}
                 >
-                  <option value="busuk">Beraroma Busuk (Kuat)</option>
-                  <option value="tidak_busuk">Tidak Beraroma</option>
+                  <option value="busuk" className="text-text-contrast bg-bg-card">Beraroma Busuk (Kuat)</option>
+                  <option value="tidak_busuk" className="text-text-contrast bg-bg-card">Tidak Beraroma</option>
                 </select>
+              </div>
+            </div>
+
+            <div className="pt-6 border-t border-border-main/50 space-y-4">
+              <div className="flex items-center gap-2 mb-1">
+                <Clock className="w-4.5 h-4.5 text-accent" />
+                <h4 className="text-xs font-black uppercase tracking-widest text-text-contrast font-display">
+                  Durasi Mengeluarkan Darah
+                </h4>
+              </div>
+              <p className="text-[10px] text-text-muted leading-relaxed font-bold">
+                Masukkan jam dan menit keluarnya darah pada tanggal ini untuk kasus pendarahan yang terputus-putus. Standar penuh adalah 24 jam.
+              </p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                <div className="space-y-3">
+                  <label className="text-xs font-black uppercase text-text-main">
+                    Jumlah Jam
+                  </label>
+                  <select 
+                    className="w-full bg-bg-main border border-border-main p-3 rounded-xl text-xs text-text-contrast font-bold focus:outline-none focus:border-accent"
+                    value={activeRecord?.durationHours !== undefined ? activeRecord.durationHours : 24}
+                    onChange={(e) => updateDayRecord(selectedDate, { durationHours: Number(e.target.value) })}
+                  >
+                    {Array.from({ length: 25 }, (_, i) => (
+                      <option key={i} value={i} className="text-text-contrast bg-bg-card font-bold">
+                        {i} Jam {i === 24 ? "(Standar Penuh)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="text-xs font-black uppercase text-text-main">
+                    Jumlah Menit
+                  </label>
+                  <select 
+                    className="w-full bg-bg-main border border-border-main p-3 rounded-xl text-xs text-text-contrast font-bold focus:outline-none focus:border-accent"
+                    value={activeRecord?.durationMinutes !== undefined ? activeRecord.durationMinutes : 0}
+                    onChange={(e) => updateDayRecord(selectedDate, { durationMinutes: Number(e.target.value) })}
+                  >
+                    {Array.from({ length: 60 }, (_, i) => (
+                      <option key={i} value={i} className="text-text-contrast bg-bg-card font-bold">
+                        {i} Menit
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
           </motion.div>
@@ -660,19 +720,19 @@ export default function App() {
         return (
           <div className="space-y-8">
             {renderDetectionBanner()}
-            <div className="space-y-6 p-6 bg-blue-950/10 border border-blue-900/50 rounded-2xl">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-blue-400 flex items-center gap-2">
+            <div className="space-y-6 p-6 bg-accent/5 border border-border-main rounded-2xl shadow-sm">
+              <h3 className="text-xs font-bold uppercase tracking-widest text-accent flex items-center gap-2 font-display">
                 <Droplet className="w-4 h-4" /> Riwayat Adat Haidl (Mustahadloh Nifas)
               </h3>
               
               <div className="space-y-4">
-                <p className="text-[10px] text-slate-500 uppercase font-black">Apakah Anda sudah pernah mengalami Haidl sebelumnya?</p>
+                <p className="text-[10px] text-text-muted uppercase font-black">Apakah Anda sudah pernah mengalami Haidl sebelumnya?</p>
                 <div className="flex gap-4">
                   <button 
                     onClick={() => setHabit({...habit, pernahHaid: false})}
                     className={cn(
-                      "flex-1 py-3 px-4 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all",
-                      habit.pernahHaid === false ? "bg-bg-card text-blue-400 border-blue-900" : "bg-bg-card text-slate-500 border-border-main"
+                      "flex-1 py-3 px-4 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
+                      habit.pernahHaid === false ? "bg-accent/15 text-accent border-accent/40 shadow-sm" : "bg-bg-card text-text-muted border-border-main hover:border-accent/30"
                     )}
                   >
                     Belum Pernah
@@ -680,8 +740,8 @@ export default function App() {
                   <button 
                     onClick={() => setHabit({...habit, pernahHaid: true})}
                     className={cn(
-                      "flex-1 py-3 px-4 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all",
-                      habit.pernahHaid === true ? "bg-blue-500 text-white border-blue-500" : "bg-bg-card text-slate-500 border-border-main"
+                      "flex-1 py-3 px-4 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
+                      habit.pernahHaid === true ? "bg-accent text-white dark:text-bg-main border-accent shadow-sm" : "bg-bg-card text-text-muted border-border-main hover:border-accent/30"
                     )}
                   >
                     Sudah Pernah
@@ -692,7 +752,7 @@ export default function App() {
               {habit.pernahHaid && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-3">
-                    <label className="text-xs font-black uppercase text-slate-500">Kebiasaan Haidl (Hari)</label>
+                    <label className="text-xs font-black uppercase text-text-muted">Kebiasaan Haidl (Hari)</label>
                     <input 
                       type="number" 
                       value={habit.duration || ''}
@@ -700,17 +760,17 @@ export default function App() {
                         const val = parseInt(e.target.value) || 0;
                         setHabit({ ...habit, duration: val, durations: [val] });
                       }}
-                      className="w-full bg-bg-card border border-blue-900/30 p-4 rounded-xl text-xl text-blue-400 focus:outline-none focus:border-blue-500 text-center"
+                      className="w-full bg-bg-card border border-border-main p-4 rounded-xl text-xl text-text-contrast focus:outline-none focus:border-accent text-center font-bold"
                       placeholder="7"
                     />
                   </div>
                   <div className="space-y-3">
-                    <label className="text-xs font-black uppercase text-slate-500">Kebiasaan Suci (Hari)</label>
+                    <label className="text-xs font-black uppercase text-text-muted">Kebiasaan Suci (Hari)</label>
                     <input 
                       type="number" 
                       value={habit.habitSuci || ''}
                       onChange={e => setHabit({...habit, habitSuci: parseInt(e.target.value) || 0})}
-                      className="w-full bg-bg-card border border-blue-900/30 p-4 rounded-xl text-xl text-blue-400 focus:outline-none focus:border-blue-500 text-center"
+                      className="w-full bg-bg-card border border-border-main p-4 rounded-xl text-xl text-text-contrast focus:outline-none focus:border-accent text-center font-bold"
                       placeholder="25"
                     />
                   </div>
@@ -806,8 +866,8 @@ export default function App() {
             </p>
           </div>
           
-          <div className="space-y-6 p-6 bg-emerald-950/10 border border-emerald-900/50 rounded-2xl">
-            <h3 className="text-sm font-black uppercase tracking-widest text-emerald-500 flex items-center gap-2">
+          <div className="space-y-6 p-6 bg-accent/5 border border-border-main rounded-2xl shadow-sm">
+            <h3 className="text-sm font-black uppercase tracking-widest text-accent flex items-center gap-2 font-display">
               <History className="w-4 h-4" /> Riwayat Adat Nifas (Persalinan Sebelumnya)
             </h3>
             
@@ -817,10 +877,10 @@ export default function App() {
                   key={item.id}
                   onClick={() => setHabit({...habit, retrospection: item.id as any})}
                      className={cn(
-                      "py-3 px-4 rounded-xl border text-xs font-black uppercase tracking-wider transition-all text-left",
+                      "py-3 px-4 rounded-xl border text-xs font-black uppercase tracking-wider transition-all text-left cursor-pointer",
                     habit.retrospection === item.id 
-                      ? "bg-emerald-500 text-white border-emerald-500 shadow-lg shadow-emerald-500/20" 
-                      : "bg-bg-card text-emerald-500 border-emerald-900/40 hover:border-emerald-500/50"
+                      ? "bg-accent text-white dark:text-bg-main border-accent shadow-lg shadow-accent/20" 
+                      : "bg-bg-card text-text-muted border-border-main hover:border-accent/40 hover:text-text-main"
                   )}
                 >
                   {item.label}
@@ -831,8 +891,8 @@ export default function App() {
             {habit.retrospection !== 'lupa_semua' && habit.retrospection !== 'ingat_waktu' && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
                 <div className="flex justify-between items-end">
-                  <p className="text-xs text-slate-500 uppercase font-black">Durasi Nifas (Hari)</p>
-                  <p className="text-[9px] text-slate-500 italic">Satu kali nifas sudah bisa jadi pedoman.</p>
+                  <p className="text-xs text-text-muted uppercase font-black">Durasi Nifas (Hari)</p>
+                  <p className="text-[9px] text-text-muted italic">Satu kali nifas sudah bisa jadi pedoman.</p>
                 </div>
                 <input 
                   type="text" 
@@ -843,18 +903,18 @@ export default function App() {
                     const nums = val.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
                     setHabit({ ...habit, durationsNifas: nums, durationNifas: nums[nums.length - 1] });
                   }}
-                  className="w-full bg-bg-card border border-emerald-900/30 p-4 rounded-xl text-lg text-emerald-400 focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-bg-card border border-border-main p-4 rounded-xl text-lg text-text-contrast focus:outline-none focus:border-accent font-bold"
                 />
               </motion.div>
             )}
 
             {habit.retrospection === 'ingat_waktu' && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl space-y-3">
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-4 bg-accent/10 border border-accent/20 rounded-xl space-y-3">
                 <div className="flex gap-3">
-                  <Clock className="w-4 h-4 text-emerald-500 mt-0.5" />
+                  <Clock className="w-4 h-4 text-accent mt-0.5" />
                   <div>
-                    <p className="text-[11px] font-bold text-emerald-400 uppercase tracking-widest">Hanya Ingat Waktu Mulai (N7)</p>
-                    <p className="text-[10px] text-slate-500 italic mt-1 leading-relaxed">
+                    <p className="text-[11px] font-bold text-accent uppercase tracking-widest">Hanya Ingat Waktu Mulai (N7)</p>
+                    <p className="text-[10px] text-text-muted italic mt-1 leading-relaxed">
                       Hari Pertama (Waktu Mulai) dihukumi YAKIN NIFAS. Hari ke-2 sampai ke-60 dihukumi IHTIYATH.
                     </p>
                   </div>
@@ -864,13 +924,13 @@ export default function App() {
           </div>
 
           {habit.pernahHaid && (
-            <div className="space-y-6 p-6 bg-blue-950/10 border border-blue-900/50 rounded-2xl">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-blue-400 flex items-center gap-2">
+            <div className="space-y-6 p-6 bg-accent/5 border border-border-main rounded-2xl shadow-sm">
+              <h3 className="text-xs font-bold uppercase tracking-widest text-accent flex items-center gap-2 font-display">
                 <Droplet className="w-4 h-4" /> Riwayat Adat Haidl (Siklus Normal Anda)
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-3">
-                  <label className="text-xs font-black uppercase text-slate-500">Kebiasaan Haidl (Hari)</label>
+                  <label className="text-xs font-black uppercase text-text-muted">Kebiasaan Haidl (Hari)</label>
                   <input 
                     type="number" 
                     value={habit.duration || ''}
@@ -878,12 +938,12 @@ export default function App() {
                       const val = parseInt(e.target.value) || 0;
                       setHabit({ ...habit, duration: val, durations: [val] });
                     }}
-                    className="w-full bg-bg-card border border-blue-900/30 p-4 rounded-xl text-lg text-blue-400 focus:outline-none focus:border-blue-500 text-center"
+                    className="w-full bg-bg-card border border-border-main p-4 rounded-xl text-lg text-text-contrast focus:outline-none focus:border-accent text-center font-bold"
                     placeholder="7"
                   />
                 </div>
                 <div className="space-y-3">
-                  <label className="text-xs font-black uppercase text-slate-500">Kebiasaan Suci (Hari)</label>
+                  <label className="text-xs font-black uppercase text-text-muted">Kebiasaan Suci (Hari)</label>
                   <input 
                     type="number" 
                     value={habit.habitSuci || ''}
@@ -955,17 +1015,17 @@ export default function App() {
       ? [
           { 
             id: 'ingat_semua', 
-            label: context === 'nifas' ? 'Ingat Durasi & Waktu Mulai Nifas' : 'Ingat Durasi & Waktu Mulai',
+            label: 'Ingat Durasi & Waktu Mulai',
             desc: 'Anda tahu persis durasi (misal: 7 hari) dan waktu/jam mulai haid tersebut.' 
           },
           { 
             id: 'ingat_durasi', 
-            label: context === 'nifas' ? 'Hanya Ingat Durasi Nifas, Lupa Waktu Mulai' : 'Hanya Ingat Durasi',
+            label: 'Hanya Ingat Durasi',
             desc: 'Anda ingat jumlah harinya (misal: 7 hari), tapi lupa jam atau tanggal mulainya.' 
           },
           { 
             id: 'ingat_waktu', 
-            label: context === 'nifas' ? 'Hanya Ingat Waktu Mulai Nifas, Lupa Durasi' : 'Hanya Ingat Waktu Mulai',
+            label: 'Hanya Ingat Waktu Mulai',
             desc: 'Anda ingat kapan haid mulai, tapi benar-benar lupa durasinya (Dohlul Waqti).' 
           },
           { 
@@ -1043,7 +1103,7 @@ export default function App() {
                 )}
               >
                 <span className="text-xs font-black uppercase tracking-wider">{item.label}</span>
-                <span className="text-[10px] opacity-60 font-normal leading-relaxed">{item.desc}</span>
+                <span className="text-[10px] opacity-65 font-bold leading-relaxed">{item.desc}</span>
               </button>
             ))}
           </div>
@@ -1070,30 +1130,18 @@ export default function App() {
 
           {habit.habitType === 'TETAP' && habit.retrospection === 'ingat_durasi' && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 mt-8">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-3">
-                  <label className="text-[10px] font-bold uppercase text-slate-500 tracking-widest">Durasi Kebiasaan (Hari)</label>
-                  <input 
-                    type="number" 
-                    value={habit.duration || ''}
-                    onChange={e => {
-                      const val = parseInt(e.target.value) || 0;
-                      setHabit({...habit, duration: val, durations: [val]});
-                    }}
-                    className="w-full bg-bg-card border border-border-main p-4 rounded-xl text-lg text-text-contrast focus:outline-none focus:border-accent"
-                    placeholder="Contoh: 5"
-                  />
-                </div>
-                <div className="space-y-3">
-                  <label className="text-[10px] font-bold uppercase text-slate-500 tracking-widest">Rentang Waktu Kebiasaan (Hari)</label>
-                  <input 
-                    type="number" 
-                    value={habit.timeRange || ''}
-                    onChange={e => setHabit({...habit, timeRange: parseInt(e.target.value) || 0})}
-                    className="w-full bg-bg-card border border-border-main p-4 rounded-xl text-lg text-text-contrast focus:outline-none focus:border-accent"
-                    placeholder="Contoh: 10"
-                  />
-                </div>
+              <div className="space-y-3">
+                <label className="text-[10px] font-bold uppercase text-slate-500 tracking-widest">Durasi Kebiasaan (Hari)</label>
+                <input 
+                  type="number" 
+                  value={habit.duration || ''}
+                  onChange={e => {
+                    const val = parseInt(e.target.value) || 0;
+                    setHabit({...habit, duration: val, durations: [val]});
+                  }}
+                  className="w-full bg-bg-card border border-border-main p-4 rounded-xl text-lg text-text-contrast focus:outline-none focus:border-accent"
+                  placeholder="Contoh: 7"
+                />
               </div>
               <div className="space-y-3">
                 <label className="text-[10px] font-bold uppercase text-slate-500 tracking-widest">Hari Yang Diyakini Pasti Suci (Tanggal Masa Adat)</label>
@@ -1102,9 +1150,9 @@ export default function App() {
                   value={habit.knownPureDay || ''}
                   onChange={e => setHabit({...habit, knownPureDay: parseInt(e.target.value) || 0})}
                   className="w-full bg-bg-card border border-border-main p-4 rounded-xl text-lg text-text-contrast focus:outline-none focus:border-accent"
-                  placeholder="Contoh: 1"
+                  placeholder="Contoh: 10"
                 />
-                <p className="text-[10px] text-slate-500 italic">Masukkan tanggal relatif dalam siklus di mana Anda yakin 100% sedang suci.</p>
+                <p className="text-[10px] text-slate-500 italic">Masukkan tanggal relatif dalam siklus di mana Anda yakin 100% sedang suci (biasanya di luar masa rentang haid Anda).</p>
               </div>
             </motion.div>
           )}
@@ -1198,15 +1246,15 @@ export default function App() {
             <button 
                 onClick={() => setIsFirstMonthIstihadloh(!isFirstMonthIstihadloh)}
                 className={cn(
-                    "w-full flex items-center gap-3 p-5 rounded-2xl border transition-all",
-                    isFirstMonthIstihadloh ? "bg-blue-950/20 border-blue-500 text-blue-400" : "bg-bg-card border-border-main text-slate-500"
+                    "w-full flex items-center gap-3 p-5 rounded-2xl border transition-all cursor-pointer",
+                    isFirstMonthIstihadloh ? "bg-accent/15 border-accent text-accent shadow-sm font-bold" : "bg-bg-card border-border-main text-text-muted hover:border-accent/40 hover:text-text-main"
                 )}
             >
                 <div className={cn(
-                    "w-6 h-6 rounded-lg border flex items-center justify-center",
-                    isFirstMonthIstihadloh ? "bg-blue-500 border-blue-500" : "border-slate-700"
+                    "w-6 h-6 rounded-lg border flex items-center justify-center transition-all",
+                    isFirstMonthIstihadloh ? "bg-accent border-accent" : "border-border-main bg-bg-main"
                 )}>
-                {isFirstMonthIstihadloh && <CheckCircle2 className="w-4 h-4 text-bg-main" />}
+                {isFirstMonthIstihadloh && <CheckCircle2 className="w-4 h-4 text-white dark:text-bg-main" />}
                 </div>
                 <div className="text-left">
                     <div className="text-sm font-black uppercase tracking-widest leading-none">Bulan Pertama Istihadloh</div>
@@ -1220,7 +1268,7 @@ export default function App() {
                     <div className="flex items-center gap-4">
                         <button 
                             onClick={() => setMonthIndex(Math.max(0, monthIndex - 1))}
-                            className="w-10 h-10 flex items-center justify-center bg-slate-800 rounded-xl hover:bg-slate-700 font-bold transition-colors"
+                            className="w-10 h-10 flex items-center justify-center bg-bg-main border border-border-main text-text-contrast hover:border-accent/40 rounded-xl font-bold transition-all cursor-pointer"
                         >
                             -
                         </button>
@@ -1229,7 +1277,7 @@ export default function App() {
                         </div>
                         <button 
                             onClick={() => setMonthIndex(monthIndex + 1)}
-                            className="w-10 h-10 flex items-center justify-center bg-slate-800 rounded-xl hover:bg-slate-700 font-bold transition-colors"
+                            className="w-10 h-10 flex items-center justify-center bg-bg-main border border-border-main text-text-contrast hover:border-accent/40 rounded-xl font-bold transition-all cursor-pointer"
                         >
                             +
                         </button>
@@ -1328,34 +1376,40 @@ export default function App() {
 
                   <div className="space-y-10">
                     <section className="space-y-4">
-                      <div className="text-[10px] text-slate-500 uppercase tracking-widest font-black flex items-center gap-2">
-                        <FileText className="w-3.5 h-3.5" /> Kesimpulan Detail
+                      <div className="text-[11px] text-text-contrast uppercase tracking-widest font-black flex items-center gap-2 font-display">
+                        <FileText className="w-4 h-4 text-accent" /> Kesimpulan Detail
                       </div>
-                      <div className="p-6 md:p-8 bg-bg-card rounded-2xl border border-border-main font-serif italic text-sm md:text-base leading-relaxed text-slate-300 whitespace-pre-line border-l-4 border-l-accent">
+                      <div className="p-6 md:p-8 bg-bg-card rounded-2xl border border-border-main font-sans text-xs md:text-[13px] leading-relaxed text-text-main font-semibold whitespace-pre-line border-l-4 border-l-accent shadow-sm">
                         {result?.analysis}
                       </div>
                     </section>
 
+                    {result?.categoryReason && (
+                      <section className="space-y-4">
+                        <div className="text-[11px] text-text-contrast uppercase tracking-widest font-black flex items-center gap-2 font-display">
+                          <Info className="w-4 h-4 text-accent" /> Alasan Penentuan Golongan
+                        </div>
+                        <div className="p-6 md:p-8 bg-bg-card rounded-2xl border border-border-main font-sans text-xs md:text-[13px] leading-relaxed text-text-main font-semibold border-l-4 border-l-accent shadow-sm">
+                          {result.categoryReason}
+                        </div>
+                      </section>
+                    )}
+
                     {result?.specialNotes && result.specialNotes.length > 0 && (
                       <section className="space-y-4">
-                        <div className="text-[10px] text-slate-500 uppercase tracking-widest font-black flex items-center gap-2">
-                          <AlertCircle className="w-3.5 h-3.5" /> Catatan Strategis
+                        <div className="text-[11px] text-text-contrast uppercase tracking-widest font-black flex items-center gap-2 font-display">
+                          <AlertCircle className="w-4 h-4 text-accent" /> Catatan Strategis
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {result.specialNotes.map((note, i) => (
-                            <div key={i} className="p-4 bg-bg-card border border-border-main rounded-xl flex gap-3 italic">
-                               <div className="w-1.5 h-1.5 rounded-full bg-accent mt-1.5 shrink-0" />
-                               <p className="text-[11px] text-slate-400 leading-relaxed">{note}</p>
+                            <div key={i} className="p-5 bg-bg-card border border-border-main rounded-2xl flex gap-3 shadow-sm">
+                               <div className="w-1.5 h-1.5 rounded-full bg-accent mt-1.5 shrink-0 animate-pulse" />
+                               <p className="text-[11px] text-text-main font-semibold leading-relaxed">{note}</p>
                             </div>
                           ))}
                         </div>
                       </section>
                     )}
-
-                    <section className="p-6 bg-bg-bottom rounded-2xl border border-border-main">
-                      <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Landasan Fiqh (Maraji'):</h4>
-                      <p className="text-xs text-slate-500 italic leading-relaxed font-serif">{result?.legalBasis}</p>
-                    </section>
                   </div>
                </div>
             </motion.div>
@@ -1396,11 +1450,11 @@ export default function App() {
                            </div>
                            <div className={cn(
                               "px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-widest",
-                              group.status === 'Haid' ? "bg-red-900/40 text-red-400 border border-red-500/20" :
-                              group.status === 'Nifas' ? "bg-purple-900/40 text-purple-400 border border-purple-500/20" :
-                              group.status === 'Suci' ? "bg-emerald-900/40 text-emerald-400 border border-emerald-500/20" :
-                              group.status === 'Ihtiyath' ? "bg-amber-600/40 text-amber-300 border border-amber-500/30" :
-                              "bg-slate-800 text-slate-400 border border-slate-700" 
+                              group.status === 'Haid' ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/20" :
+                              group.status === 'Nifas' ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/20" :
+                              group.status === 'Suci' ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20" :
+                              group.status === 'Ihtiyath' ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20" :
+                              "bg-bg-side text-text-muted border-border-main" 
                            )}>
                              {group.status === 'Istihadloh' ? 'Istihaḍah' : group.status}
                            </div>
@@ -1443,33 +1497,35 @@ export default function App() {
 
                   <div className="space-y-4">
                     {result?.totalQodloPuasa !== undefined && result.totalQodloPuasa > 0 && (
-                      <div className="p-6 bg-emerald-950/20 border border-emerald-500/30 rounded-2xl flex items-center gap-6 mb-4">
+                      <div className="p-6 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center gap-6 mb-4">
                           <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-500 shrink-0">
                              <Target className="w-6 h-6" />
                           </div>
                           <div>
-                              <div className="text-xs font-black text-emerald-400 uppercase tracking-widest">Hutang Puasa</div>
-                              <div className="text-3xl font-black text-text-contrast">{result.totalQodloPuasa} <span className="text-sm uppercase text-emerald-600 font-bold ml-1">Hari</span></div>
+                              <div className="text-xs font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Hutang Puasa</div>
+                              <div className="text-3xl font-black text-text-contrast">{result.totalQodloPuasa} <span className="text-sm uppercase text-emerald-600 dark:text-emerald-400 font-bold ml-1">Hari</span></div>
                           </div>
                       </div>
                     )}
 
                     <div className="grid grid-cols-1 gap-3">
-                      {result?.groupedQadho?.map((group, i) => (
-                        <div key={i} className="flex gap-4 items-start p-5 bg-red-950/20 border border-red-500/30 rounded-2xl group hover:border-red-500 transition-colors shadow-lg shadow-red-950/20">
+                      {result?.groupedQadho
+                        ?.filter(group => !group.message.includes("Darah Istihadloh (Fasad)"))
+                        ?.map((group, i) => (
+                        <div key={i} className="flex gap-4 items-start p-5 bg-red-500/5 dark:bg-red-500/10 border border-red-500/20 rounded-2xl group hover:border-red-500/40 transition-all shadow-sm">
                           <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center shrink-0">
                             <AlertCircle className="w-6 h-6 text-red-500" />
                           </div>
                           <div className="space-y-2">
                             <div className="flex items-center gap-2">
-                                <div className="text-[12px] font-black text-red-400 uppercase tracking-[0.2em] leading-none">
+                                <div className="text-[12px] font-black text-red-600 dark:text-red-400 uppercase tracking-[0.2em] leading-none">
                                     {group.startDay === group.endDay ? `Hari ke-${group.startDay}` : `Hari ke-${group.startDay} s/d ke-${group.endDay}`}
                                 </div>
                                 <div className="px-2 py-0.5 bg-red-500/10 border border-red-500/20 rounded text-[8px] font-black uppercase text-red-500">
                                     Penting
                                 </div>
                             </div>
-                            <p className="text-[12px] text-slate-200 leading-relaxed font-medium">{group.message}</p>
+                            <p className="text-[12px] text-text-main leading-relaxed font-bold">{group.message}</p>
                           </div>
                         </div>
                       ))}
@@ -1507,9 +1563,18 @@ export default function App() {
                 {result?.shortCategory}
               </h2>
 
-              <p className="text-[10px] md:text-xs text-slate-500 uppercase tracking-[0.3em] font-medium opacity-60">
+              <p className="text-[10px] md:text-xs text-slate-500 uppercase tracking-[0.3em] font-bold opacity-60">
                 Analisis Berdasarkan Pola Karakteristik & Adat
               </p>
+
+              {result?.categoryReason && (
+                <div className="max-w-2xl mx-auto p-6 md:p-8 bg-bg-side border-2 border-accent/20 rounded-3xl text-left space-y-3 group-hover:border-accent/50 transition-colors shadow-sm">
+                  <div className="text-[11px] text-accent font-black uppercase tracking-[0.15em] flex items-center gap-1.5 font-display">
+                    <Info className="w-4 h-4 text-accent" /> Alasan Penentuan Golongan
+                  </div>
+                  <p className="text-text-main text-xs md:text-[13px] leading-relaxed font-semibold font-sans">{result.categoryReason}</p>
+                </div>
+              )}
 
               <div className="pt-8 flex flex-wrap gap-4 items-center justify-center">
                 <button 
@@ -1562,23 +1627,6 @@ export default function App() {
             </div>
           </button>
         </div>
-
-        {/* PANDUAN RINGKAS (STILL DESERVES A SPOT ON MAIN PAGE) */}
-        <div className="bg-bg-card p-10 rounded-[2.5rem] border border-border-main shadow-lg space-y-8">
-           <div className="flex items-center justify-between">
-              <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.3em]">Langkah Selanjutnya</h3>
-              <Droplet className="w-4 h-4 text-accent/40" />
-           </div>
-           
-           <div className="p-6 bg-accent/10 border border-accent/20 rounded-2xl">
-              <p className="text-xs text-text-contrast leading-relaxed font-medium">
-                {isFirstMonthIstihadloh 
-                  ? "Masa Penantian 15 Hari telah berakhir. Mulai hari ini, Anda WAJIB MANDI BESAR (Janabah) dan status Anda resmi menjadi wanita Mustahadloh (Suci). Anda WAJIB melaksanakan sholat fardlu dan puasa tepat waktu (dengan tata cara bersuci khusus Mustahadloh). Jika ibadah di hari-hari ini terlanjur Anda tinggalkan, maka wajib diqodlo."
-                  : "Mandi wajib (janabah) disesuaikan dengan kategori Anda (tepat di saat karakter darah berubah untuk Mumayyizah, atau setelah hari adat selesai untuk Ghoiru Mumayyizah)." 
-                }
-              </p>
-           </div>
-        </div>
       </div>
 
       <button 
@@ -1595,7 +1643,7 @@ export default function App() {
       {/* MOBILE HEADER */}
       <header className="md:hidden h-16 border-b border-border-main flex items-center justify-between px-6 bg-bg-side z-50">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-serif italic text-accent tracking-tighter">Al-Kautsar</h1>
+          <h1 className="text-2xl font-display font-black text-accent tracking-tight">Al-Kautsar</h1>
         </div>
         <button 
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -1611,8 +1659,8 @@ export default function App() {
         isSidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="p-8 border-b border-border-main hidden md:block">
-          <h1 className="text-3xl font-serif italic text-accent tracking-tighter">Al-Kautsar</h1>
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-500 font-black opacity-70">Fiqh Darah AI</p>
+          <h1 className="text-3xl font-display font-black text-accent tracking-normal">Al-Kautsar</h1>
+          <p className="text-[10px] uppercase tracking-[0.25em] text-text-muted font-bold mt-1">Fiqh Darah AI</p>
         </div>
 
         <div className="flex-1 overflow-y-auto flex flex-col custom-scrollbar">

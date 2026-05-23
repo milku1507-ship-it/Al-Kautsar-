@@ -171,6 +171,19 @@ function generateActionableNotes(
   return notes;
 }
 
+export function calculateBloodHours(days: DayStrength[]): number {
+  let total = 0;
+  days.forEach(d => {
+    if (d.isBlood) {
+      const rec = d.originalRecord;
+      const hours = rec?.durationHours !== undefined ? rec.durationHours : 24;
+      const mins = rec?.durationMinutes !== undefined ? rec.durationMinutes : 0;
+      total += hours + (mins / 60);
+    }
+  });
+  return total;
+}
+
 /**
  * 4. ROUTER & MESIN LOGIKA FIQH
  */
@@ -182,7 +195,7 @@ export function determineStatus(
 ): FiqhAnalysisResult {
   const maxDays = context === 'haid' ? 15 : 60;
   const totalSpan = days.length;
-  const bloodHours = days.filter(d => d.isBlood).length * 24;
+  const bloodHours = calculateBloodHours(days);
 
   let category = "";
   let analysis = "";
@@ -324,8 +337,12 @@ export function determineStatus(
   
   // Menambahkan Alasan Logis
   const alasanLogisMap: Record<string, string> = {
-    "Haidl Normal": "Darah Anda keluar dalam rentang waktu yang wajar dan mencapai syarat minimal, sehingga seluruh darah dan masa jeda di antaranya dihukumi sebagai darah haid berdasarkan kaidah Jam'u.",
-    "Nifas Normal": "Darah Anda keluar dalam rentang waktu yang wajar, sehingga seluruh darah dan masa jeda di antaranya dihukumi sebagai darah nifas.",
+    "Haidl Normal": isTerputus 
+      ? "Darah Anda keluar dalam rentang waktu yang wajar (antara 24 jam s.d. 15 hari) dan dipisahkan dengan masa suci/jeda di antaranya, sehingga seluruh hari pendarahan dan masa jeda di antaranya dihukumi sebagai darah haid berdasarkan kaidah Jam'u/Talfiq."
+      : "Darah Anda keluar dalam rentang waktu yang wajar (antara 24 jam s.d. 15 hari) secara terus-menerus tanpa terputus, sehingga seluruh pendarahan dihukumi sebagai darah haid.",
+    "Nifas Normal": isTerputus
+      ? "Pendarahan pasca-melahirkan Anda keluar dalam rentang waktu yang wajar (tidak melebihi batas maksimal nifas 60 hari) dan dipisahkan dengan masa suci/jeda di antaranya, sehingga seluruh hari pendarahan dan masa jeda di antaranya dihukumi sebagai darah nifas berdasarkan kaidah Jam'u/Talfiq."
+      : "Pendarahan pasca-melahirkan Anda keluar dalam rentang waktu yang wajar (tidak melebihi batas maksimal nifas 60 hari) secara terus-menerus tanpa terputus, sehingga seluruh pendarahan dihukumi sebagai darah nifas.",
     "Mubtadi'ah Mumayyizah": "Darah Anda memiliki perbedaan kualitas (kuat/lemah) yang memenuhi syarat Tamyiz, sehingga darah yang kuat dihukumi haid dan yang lemah dihukumi istihadloh.",
     "Mubtadi'ah Ghoiru Mumayyizah": "Darah tidak memiliki perbedaan kualitas yang memenuhi syarat Tamyiz, maka berdasarkan kaidah Mubtadi'ah Ghoiru Mumayyizah, hari pertama dihukumi haid dan sisanya istihadloh.",
     "Mu'tadah Mumayyizah": "Darah Anda memiliki perbedaan kualitas (kuat/lemah) yang memenuhi syarat Tamyiz, sehingga darah yang kuat dihukumi haid dan yang lemah dihukumi istihadloh.",
@@ -360,6 +377,7 @@ export function determineStatus(
     analysis,
     statusTimeline,
     category,
+    categoryReason: alasanLogisMap[category] || "",
     shortCategory,
     specialNotes: Array.from(new Set(specialNotes)),
     purificationInstructions: Array.from(new Set(purificationInstructions)),
