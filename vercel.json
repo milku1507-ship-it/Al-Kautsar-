@@ -3,11 +3,15 @@
   "trailingSlash": false,
   "rewrites": [
     {
-      "source": "/manifest.json",
-      "destination": "/manifest.webmanifest"
+      "source": "/manifest.webmanifest",
+      "destination": "/manifest.json"
     },
     {
-      "source": "/((?!api|manifest\\.json)[^.]*)$",
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ],
