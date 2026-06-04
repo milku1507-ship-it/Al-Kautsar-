@@ -24,7 +24,37 @@ async function startServer() {
   } else {
     // Serving static files in production
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
+
+    // Highly-compatible PWA endpoints to ensure instant & correct loading
+    app.get("/manifest.json", (req, res) => {
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.sendFile(path.join(distPath, "manifest.json"));
+    });
+
+    app.get("/manifest.webmanifest", (req, res) => {
+      res.setHeader("Content-Type", "application/manifest+json");
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.sendFile(path.join(distPath, "manifest.json"));
+    });
+
+    app.get("/favicon.ico", (req, res) => {
+      res.setHeader("Content-Type", "image/png");
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      res.sendFile(path.join(distPath, "icon-192.png"));
+    });
+
+    app.use(express.static(distPath, {
+      maxAge: "1d",
+      setHeaders: (res, filePath) => {
+        const file = filePath.toLowerCase();
+        if (file.endsWith(".html") || file.endsWith("sw.js") || file.endsWith("manifest.webmanifest") || file.endsWith(".json")) {
+          res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        } else {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        }
+      }
+    }));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });

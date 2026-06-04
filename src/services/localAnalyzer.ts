@@ -99,7 +99,12 @@ function buildFiqhAnalysisSummary(
         summary += parts.join(', ') + ". ";
     }
 
-    summary += "\nPendarahan Anda melampaui satu siklus normal. Sistem telah memetakan hukum secara berulang (siklus) sesuai kaidah golongan Anda untuk bulan-bulan berikutnya.";
+    const limit = category.toLowerCase().includes("nifas") ? 60 : 15;
+    if (statusTimeline.length > limit) {
+        summary += "\nPendarahan Anda melampaui satu siklus normal. Sistem telah memetakan hukum secara berulang (siklus) sesuai kaidah golongan Anda untuk bulan-bulan berikutnya.";
+    } else {
+        summary += "\nSeluruh rangkaian pendarahan dan hari jeda bersih berada dalam batas durasi normal (maksimal 15 hari haid / 60 hari nifas) dan telah dianalisis sesuai ketentuan fikih.";
+    }
 
     return summary;
 }
@@ -203,7 +208,9 @@ function calculateQodlo(
   stopTime: string | undefined,  // Waktu darah berhenti
   hasPerformed: boolean | undefined, // Sudah sholat sebelum darah datang?
   isRamadhan: boolean | undefined,
-  existingObligations: string[] = [] // Existing obligations from sub-functions
+  existingObligations: string[] = [], // Existing obligations from sub-functions
+  firstBleedingDay: number = 1,
+  lastBleedingDay: number = -1
 ) {
   const qodloSholat: string[] = [...existingObligations];
   let totalQodloPuasa = 0;
@@ -226,8 +233,8 @@ const MIN_PURE_DAYS = 15;
       
       // Threshold 15 menit (untuk sholat + bersuci)
       if (diff >= 15) {
-        if (!qodloSholat.some(q => q.includes(`hari ke-1: Sholat ${info.name} (Awal)`))) {
-          qodloSholat.push(`Sholat hari ke-1: Sholat ${info.name} (Awal) wajib diqodlo karena darah datang di waktu ${info.name} (${startTime}) dan telah melewati jarak waktu yang cukup untuk sholat & bersuci, namun Anda belum melaksanakannya.`);
+        if (!qodloSholat.some(q => q.includes(`hari ke-${firstBleedingDay}: Sholat ${info.name} (Awal)`))) {
+          qodloSholat.push(`Sholat hari ke-${firstBleedingDay}: Sholat ${info.name} (Awal) wajib diqodlo karena darah datang di waktu ${info.name} (${startTime}) dan telah melewati jarak waktu yang cukup untuk sholat & bersuci, namun Anda belum melaksanakannya.`);
         }
       }
     }
@@ -237,20 +244,20 @@ const MIN_PURE_DAYS = 15;
   if (stopTime) {
     const info = getPrayerInfo(stopTime);
     if (info.name !== 'Luar Waktu') {
-      const lastDay = timeline.length > 0 ? timeline[timeline.length - 1].day : 1;
-      const isAlreadyAdded = (prayerName: string) => qodloSholat.some(q => q.includes(`hari ke-${lastDay}:`) && q.includes(prayerName));
+      const finalLastDay = lastBleedingDay !== -1 ? lastBleedingDay : (timeline.length > 0 ? timeline[timeline.length - 1].day : 1);
+      const isAlreadyAdded = (prayerName: string) => qodloSholat.some(q => q.includes(`hari ke-${finalLastDay}:`) && q.includes(prayerName));
 
       if (info.name === 'Ashar') {
         if (!isAlreadyAdded('Ashar')) {
-          qodloSholat.push(`Sholat hari ke-${lastDay}: Sholat Ashar & Dzuhur wajib diqodlo karena darah berhenti di waktu Ashar (${stopTime}) dan masih ada waktu minimal untuk Takbirotul Ihrom (Allahu Akbar). Dan Anda tidak melaksanakannya atau keburu magrib. Maka Anda wajib mengqodlo Ashar DAN Dzuhur sebelumnya (karena keduanya bisa dijama' menurut Kaidah Fiqlh).`);
+          qodloSholat.push(`Sholat hari ke-${finalLastDay}: Sholat Ashar & Dzuhur wajib diqodlo karena darah berhenti di waktu Ashar (${stopTime}) dan masih ada waktu minimal untuk Takbirotul Ihrom (Allahu Akbar). Dan Anda tidak melaksanakannya atau keburu magrib. Maka Anda wajib mengqodlo Ashar DAN Dzuhur sebelumnya (karena keduanya bisa dijama' menurut Kaidah Fiqlh).`);
         }
       } else if (info.name === 'Isya') {
         if (!isAlreadyAdded('Isya')) {
-          qodloSholat.push(`Sholat hari ke-${lastDay}: Sholat Isya & Maghrib wajib diqodlo karena darah berhenti di waktu Isya (${stopTime}) dan masih ada waktu minimal untuk Takbirotul Ihrom (Allahu Akbar). Dan Anda tidak melaksanakannya atau keburu subuh. Maka Anda wajib mengqodlo Isya DAN Maghrib sebelumnya (karena keduanya bisa dijama' menurut Kaidah Fiqlh).`);
+          qodloSholat.push(`Sholat hari ke-${finalLastDay}: Sholat Isya & Maghrib wajib diqodlo karena darah berhenti di waktu Isya (${stopTime}) dan masih ada waktu minimal untuk Takbirotul Ihrom (Allahu Akbar). Dan Anda tidak melaksanakannya atau keburu subuh. Maka Anda wajib mengqodlo Isya DAN Maghrib sebelumnya (karena keduanya bisa dijama' menurut Kaidah Fiqlh).`);
         }
       } else {
         if (!isAlreadyAdded(info.name)) {
-          qodloSholat.push(`Sholat hari ke-${lastDay}: Sholat ${info.name} wajib diqodlo karena darah berhenti di waktu ${info.name} (${stopTime}). Karena saat berhenti masih ada waktu minimal muat Takbirotul Ihrom (Allahu Akbar), Anda wajib langsung mandi & sholat (ada') jika waktu cukup, atau mengqodlo jika waktu habis.`);
+          qodloSholat.push(`Sholat hari ke-${finalLastDay}: Sholat ${info.name} wajib diqodlo karena darah berhenti di waktu ${info.name} (${stopTime}). Karena saat berhenti masih ada waktu minimal muat Takbirotul Ihrom (Allahu Akbar), Anda wajib langsung mandi & sholat (ada') jika waktu cukup, atau mengqodlo jika waktu habis.`);
         }
       }
     }
@@ -343,39 +350,108 @@ export function analyzeNifas(
   const qadhoObligations: string[] = [];
   const sixtyDaysLimit = 60;
 
-  // 1. Evaluasi Zona A & B (Nglarani Manak)
-  let laborBloodIsHaid = false;
-  const laborIdx = days.findIndex((_, i) => dayZones[i] === 'B');
-  if (laborIdx !== -1 && days[laborIdx].isBlood) {
-    let bloodHoursPre = 0;
-    for (let i = laborIdx; i >= 0; i--) {
-        const d = days[i];
-        if (d.isBlood) {
-            const rec = d.originalRecord;
-            const hours = rec?.durationHours !== undefined ? rec.durationHours : 24;
-            const mins = rec?.durationMinutes !== undefined ? rec.durationMinutes : 0;
-            bloodHoursPre += hours + (mins / 60);
-        } else {
-            break;
-        }
-    }
-    if (bloodHoursPre >= 24) laborBloodIsHaid = true;
+  // 1. Evaluasi Zona A & B (Nglarani Manak / Haidl Ibu Hamil)
+  // Menentukan kelompok darah pre-labor (Zona A & B)
+  const preLaborIdxs = days.map((_, i) => i).filter(i => dayZones[i] === 'A' || dayZones[i] === 'B');
+  const preLaborBloodIdxs = preLaborIdxs.filter(i => days[i].isBlood);
+
+  // Group pre-labor blood indices into clusters where gap is < 15 days
+  const preLaborClusters: { start: number; end: number; isValidHaid: boolean }[] = [];
+  if (preLaborBloodIdxs.length > 0) {
+      let currentCluster = [preLaborBloodIdxs[0]];
+      for (let i = 1; i < preLaborBloodIdxs.length; i++) {
+          if (preLaborBloodIdxs[i] - preLaborBloodIdxs[i-1] - 1 < 15) {
+              currentCluster.push(preLaborBloodIdxs[i]);
+          } else {
+              const start = currentCluster[0];
+              const end = currentCluster[currentCluster.length - 1];
+              preLaborClusters.push({ start, end, isValidHaid: false });
+              currentCluster = [preLaborBloodIdxs[i]];
+          }
+      }
+      const start = currentCluster[0];
+      const end = currentCluster[currentCluster.length - 1];
+      preLaborClusters.push({ start, end, isValidHaid: false });
+
+      // For each cluster, evaluate if it satisfies the Haid conditions (span <= 15 days, blood hours >= 24)
+      for (const cl of preLaborClusters) {
+          const span = cl.end - cl.start + 1;
+          let totalHours = 0;
+          for (let j = cl.start; j <= cl.end; j++) {
+              if (days[j].isBlood) {
+                  const rec = days[j].originalRecord;
+                  const hours = rec?.durationHours !== undefined ? rec.durationHours : 24;
+                  const mins = rec?.durationMinutes !== undefined ? rec.durationMinutes : 0;
+                  totalHours += hours + (mins / 60);
+              }
+          }
+          if (span <= 15 && totalHours >= 24) {
+              cl.isValidHaid = true;
+          }
+      }
   }
 
+  // Populate timeline for pre-labor days (Zona A & B)
   for (let i = 0; i < days.length; i++) {
     if (dayZones[i] === 'A' || dayZones[i] === 'B') {
       const d = days[i];
-      if (d.isBlood) {
-        if (laborBloodIsHaid) {
-          statusTimeline.push({ day: d.dayNumber, date: d.date, status: 'Haid', isBlood: d.isBlood, reason: 'Darah saat melahirkan (Nglarani) yang bersambung dengan Haidl sebelumnya.' });
+      const cluster = preLaborClusters.find(cl => i >= cl.start && i <= cl.end);
+      if (cluster) {
+        if (cluster.isValidHaid) {
+          statusTimeline.push({
+            day: d.dayNumber,
+            date: d.date,
+            status: 'Haid',
+            isBlood: d.isBlood,
+            reason: d.isBlood 
+              ? (dayZones[i] === 'B' ? 'Darah saat melahirkan (Nglarani) yang bersambung dengan Haidl sebelum melahirkan.' : 'Darah Haidl sebelum melahirkan (hukum Haidl ibu hamil).')
+              : 'Masa berhenti (jeda bersih) di sela-sela Haidl sebelum melahirkan (Hukum Jam\'u).'
+          });
         } else {
-          statusTimeline.push({ day: d.dayNumber, date: d.date, status: 'Istihadloh', isBlood: d.isBlood, reason: 'Darah saat melahirkan (Nglarani) / Darah pembuka yang tidak memenuhi syarat Haidl.' });
-          if (d.dayNumber <= 15) {
-            qadhoObligations.push(`Sholat hari ke-${d.dayNumber} (saat melahirkan) wajib diqodho karena statusnya Istihadloh.`);
+          if (d.isBlood) {
+            statusTimeline.push({
+              day: d.dayNumber,
+              date: d.date,
+              status: 'Istihadloh',
+              isBlood: d.isBlood,
+              reason: dayZones[i] === 'B' 
+                ? 'Darah saat melahirkan (Nglarani) / Darah pembuka yang tidak memenuhi syarat Haidl.'
+                : 'Darah penyakit (Istihadloh) sebelum melahirkan karena tidak memenuhi syarat durasi Haidl.'
+            });
+            if (d.dayNumber <= 15) {
+              qadhoObligations.push(`Sholat hari ke-${d.dayNumber} (saat melahirkan/sebelum melahirkan) wajib diqodho karena statusnya Istihadloh.`);
+            }
+          } else {
+            statusTimeline.push({
+              day: d.dayNumber,
+              date: d.date,
+              status: 'Suci',
+              isBlood: d.isBlood,
+              reason: 'Masa suci sebelum melahirkan.'
+            });
           }
         }
       } else {
-        statusTimeline.push({ day: d.dayNumber, date: d.date, status: 'Suci', isBlood: d.isBlood, reason: 'Masa suci sebelum melahirkan.' });
+        // Outside of any blood clusters.
+        // Check if there is a valid Haid cluster before this index (meaning this is a pure separating gap before labor/nifas)
+        const hasValidHaidBefore = preLaborClusters.some(cl => cl.isValidHaid && cl.end < i);
+        if (hasValidHaidBefore && dayZones[i] !== 'C') {
+          statusTimeline.push({
+            day: d.dayNumber,
+            date: d.date,
+            status: 'Suci',
+            isBlood: d.isBlood,
+            reason: 'Masa suci pemisah antara haidl dan nifas (tidak disyaratkan minimal 15 hari suci pemisah).'
+          });
+        } else {
+          statusTimeline.push({
+            day: d.dayNumber,
+            date: d.date,
+            status: 'Suci',
+            isBlood: d.isBlood,
+            reason: 'Masa suci sebelum melahirkan.'
+          });
+        }
       }
     }
   }
@@ -469,9 +545,25 @@ export function analyzeNifas(
     } else if (i <= nifasEndIdxRel) {
       statusTimeline.push({ day: d.dayNumber, date: d.date, status: 'Nifas', isBlood: d.isBlood, reason: d.isBlood ? 'Darah Nifas.' : 'Masa berhenti di sela-sela Nifas (Hukum Jam\'u).' });
     } else if (i < sixtyDaysLimit) {
-      statusTimeline.push({ day: d.dayNumber, date: d.date, status: d.isBlood ? 'Haid' : 'Suci', isBlood: d.isBlood, reason: d.isBlood ? 'Darah Haidl sesudah nifas (dipisah jeda 15 hari).' : 'Suci pemisah Nifas dan Haidl.' });
+      statusTimeline.push({ 
+        day: d.dayNumber, 
+        date: d.date, 
+        status: d.isBlood ? 'Haid' : 'Suci', 
+        isBlood: d.isBlood, 
+        reason: d.isBlood 
+          ? 'Darah Haidl sesudah nifas (dipisah jeda suci minimal 15 hari di dalam rentang 60 hari nifas).' 
+          : 'Masa suci pemisah antara nifas dan haidl (dalam rentang 60 hari nifas).' 
+      });
     } else {
-      statusTimeline.push({ day: d.dayNumber, date: d.date, status: d.isBlood ? 'Haid' : 'Suci', isBlood: d.isBlood, reason: d.isBlood ? 'Darah Haidl (di luar 60 hari nifas).' : 'Suci pasca 60 hari.' });
+      statusTimeline.push({ 
+        day: d.dayNumber, 
+        date: d.date, 
+        status: d.isBlood ? 'Haid' : 'Suci', 
+        isBlood: d.isBlood, 
+        reason: d.isBlood 
+          ? 'Darah Haidl di luar batas nifas 60 hari (tidak disyaratkan jeda suci 15 hari setelah masa nifas berakhir).' 
+          : 'Masa suci pemisah antara nifas dan haidl (di luar batas nifas 60 hari).' 
+      });
     }
   });
 
@@ -810,6 +902,9 @@ function buildFinalNifasResult(
     }
   }
 
+  // Catatan strategis tentang masa suci pemisah (haid-nifas, nifas-haid, nifas-nifas)
+  nifasNotes.push("Masa suci pemisah antara haidl & nifas, nifas & haidl, atau nifas & nifas yang lain tidak disyaratkan harus ada 15 hari 15 malam (bisa kurang dari satu hari, atau tanpa pemisah sama sekali). Hal ini berbeda dengan masa suci pemisah antara haidl dengan haidl yang wajib berdurasi minimal 15 hari 15 malam.");
+
   if (isRamadhan && totalQodloPuasa > 0) {
     nifasNotes.push(`Status Puasa: Anda memiliki hutang qodlo puasa sebanyak ${totalQodloPuasa} hari Ramadhan.`);
     if (isTerputusFlow) {
@@ -884,41 +979,52 @@ export function checkTamyiz(darahKuat: DayStrength[], darahLemah: DayStrength[],
         if (uniqueBloodCount <= 1) return false;
     }
 
-    // SYARAT TAMYIZ: 
-    // 1. Darah kuat tidak kurang dari 24 jam.
-    // 2. Darah kuat tidak melebihi 15 hari. (Jika ada beberapa sesi kuat dipisah lemah < 15 hari, maka dihitung satu rentang).
-    // 3. Darah lemah tidak kurang dari 15 hari (sebagai pemisah jika ada kuat berikutnya).
-    
-    const firstStrongSession = sessions.find(s => s.type === 'strong');
-    if (!firstStrongSession) return false;
+    const strongSessions = sessions.filter(s => s.type === 'strong');
+    if (strongSessions.length === 0) return false;
 
-    // Cari rentang "pool" kuat pertama
-    let firstPoolEndIdx = sessions.indexOf(firstStrongSession);
-    let totalPoolDays = firstStrongSession.days.length;
-    
-    // We do not merge strong sessions if the weak gap is < 15 days,
-    // as evaluateMubtadiahMumayyizah handles rules for distinguishing them.
-
-    const poolHours = totalPoolDays * 24;
-    
-    // Syarat 1 & 2: Pool kuat pertama harus 24 jam - 15 hari
-    const s1 = poolHours >= 24;
-    const s2 = poolHours <= 360; // 15 hari
-    
-    if (!s1 || !s2) return false;
-
-    // Syarat 3: Jika ada darah kuat diluar pool pertama, lemah pemisah harus >= 15 hari
-    // (Sudah terhandle oleh logika break di atas, tapi kita pastikan minimal ada 15 hari lemah total setelah pool kuat)
-    let totalWeakAfter = 0;
-    for (let i = firstPoolEndIdx + 1; i < sessions.length; i++) {
-        if (sessions[i].type === 'weak') totalWeakAfter += sessions[i].days.length;
+    // Check each strong session:
+    // Any strong session must have length <= 15 days, and cumulative hours must be >= 24 hours.
+    for (const s of strongSessions) {
+        const strongHours = s.days.length * 24;
+        if (strongHours < 24) return false; // must be at least 24 hours
+        if (s.days.length > 15) return false; // must be at most 15 days
     }
-    
-    // Lemah yang tersisa (yang mengikuti darah kuat) harus >= 15 hari agar darah kuat tersebut sah sbg haid
-    // Tapi jika darah lemah tersebut terus menerus (istihadloh), syaratnya adalah dia tidak kurang dari 15 hari 
-    // kecuali jika bersambung ke akhir (maka dianggap suci pemisah).
-    // Secara umum, Tamyiz sah jika pool kuat <= 15 hari dan diikuti lemah.
-    
+
+    // Verify the relationship between consecutive strong sessions
+    for (let i = 0; i < sessions.length; i++) {
+        const current = sessions[i];
+        if (current.type === 'strong') {
+            // Find the next strong session and see if the weak session in-between is >= 15 days
+            // Or if the combined span from this strong session to the next strong session is <= 15 days.
+            for (let j = i + 1; j < sessions.length; j++) {
+                if (sessions[j].type === 'strong') {
+                    // Find all sessions between i and j
+                    const intermediateWeb = sessions.slice(i, j + 1);
+                    // Sum total days of intermediate sessions
+                    let totalDaysSpan = 0;
+                    intermediateWeb.forEach(s => totalDaysSpan += s.days.length);
+                    
+                    if (totalDaysSpan > 15) {
+                        // The total span is > 15 days, so they cannot be merged.
+                        // Thus, there must be at least 15 days of weak blood/purity in between!
+                        let weakDaysCount = 0;
+                        for (let k = i + 1; k < j; k++) {
+                            if (sessions[k].type === 'weak') {
+                                weakDaysCount += sessions[k].days.length;
+                            }
+                        }
+                        if (weakDaysCount < 15) {
+                            // Weak gap is too short and total span is > 15. Invalid Tamyiz!
+                            return false;
+                        }
+                    }
+                    // Break since we only need to compare adjacent strong sessions (j is the next strong session)
+                    break;
+                }
+            }
+        }
+    }
+
     return true;
 }
 
@@ -942,29 +1048,30 @@ function evaluateMubtadiahMumayyizah(days: DayStrength[], isFirstMonth: boolean,
     // Special rule: DK1 + DL <= 15 days, then DK1+DL = Haid
 
     const haidIndices = new Set<number>();
-    const firstStrongSessionIdx = sessions.findIndex(s => s.type === 'strong');
     
-    if (firstStrongSessionIdx !== -1) {
-        sessions[firstStrongSessionIdx].days.forEach((d) => haidIndices.add(days.indexOf(d)));
+    // 1. Tambahkan semua hari dari sesi kuat ke haidIndices
+    sessions.forEach(s => {
+        if (s.type === 'strong') {
+            s.days.forEach(d => haidIndices.add(days.indexOf(d)));
+        }
+    });
+
+    // 2. Lakukan penggabungan (merging) untuk sesi kuat yang jaraknya berdekatan (total rentang <= 15 hari)
+    const strongSessionIndices = sessions.map((s, idx) => s.type === 'strong' ? idx : -1).filter(idx => idx !== -1);
+    for (let x = 0; x < strongSessionIndices.length - 1; x++) {
+        const i = strongSessionIndices[x];
+        const j = strongSessionIndices[x + 1];
         
-        for (let i = firstStrongSessionIdx + 1; i < sessions.length; i++) {
-            const session = sessions[i];
-            const prevSession = sessions[i-1];
-            
-            if (session.type === 'strong') {
-                 if (prevSession.type === 'weak') {
-                     const dk1Session = sessions[firstStrongSessionIdx];
-                     if ((dk1Session.days.length + prevSession.days.length) <= 15) {
-                         session.days.forEach(d => haidIndices.add(days.indexOf(d)));
-                     }
-                 }
-            } else {
-                 if (prevSession.type === 'strong') {
-                     const dk1Session = sessions[firstStrongSessionIdx];
-                     if ((dk1Session.days.length + session.days.length) <= 15) {
-                         session.days.forEach(d => haidIndices.add(days.indexOf(d)));
-                     }
-                 }
+        const firstDayOfI = sessions[i].days[0];
+        const lastDayOfJ = sessions[j].days[sessions[j].days.length - 1];
+        const dayIdxOfI = days.indexOf(firstDayOfI);
+        const dayIdxOfJ = days.indexOf(lastDayOfJ);
+        
+        const totalSpan = dayIdxOfJ - dayIdxOfI + 1;
+        if (totalSpan <= 15) {
+            // Gabungkan semua hari di antaranya (termasuk darah lemah / jeda suci) menjadi Haid
+            for (let k = dayIdxOfI; k <= dayIdxOfJ; k++) {
+                haidIndices.add(k);
             }
         }
     }
@@ -972,28 +1079,30 @@ function evaluateMubtadiahMumayyizah(days: DayStrength[], isFirstMonth: boolean,
     // Dynamic Golongan & Analysis Construction
     const haidIndicesCount = haidIndices.size;
     
+    const waitingDaysInfo = days.filter((d, idx) => isFirstMonth && !haidIndices.has(idx) && d.dayNumber <= 15 && d.isBlood);
+    const minWaitingDay = waitingDaysInfo.length > 0 ? Math.min(...waitingDaysInfo.map(d => d.dayNumber)) : 2;
+    const maxWaitingDay = waitingDaysInfo.length > 0 ? Math.max(...waitingDaysInfo.map(d => d.dayNumber)) : 15;
+
     // Build Timeline
     days.forEach((d, idx) => {
         const isHaid = haidIndices.has(idx);
         const isWaiting = isFirstMonth && d.dayNumber <= 15;
+        const status = isHaid ? 'Haid' : (d.isBlood ? 'Istihadloh' : 'Suci');
+        const reason = isHaid 
+            ? "Darah Kuat/Lemah (Haid - Sesuai kaidah Mumayyizah)." 
+            : (d.isBlood ? "Darah Lemah (Istihadloh)." : "Masa suci.");
         statusTimeline.push({
             day: d.dayNumber,
             date: d.date,
-            status: isHaid ? 'Haid' : 'Istihadloh',
+            status,
             isBlood: d.isBlood,
             isFirstMonthWaiting: isWaiting && !isHaid,
-            reason: isHaid ? "Darah Kuat/Lemah (Haid - Sesuai kaidah Mumayyizah)." : "Darah Lemah (Istihadloh)."
+            reason
         });
 
         // Logika Qodlo
-        if (isFirstMonth && !isHaid && d.dayNumber <= 15) {
-            if (isWaiting) {
-                qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Menanti 15 Hari). Karena Anda belum memiliki kebiasaan (adat) dan ini pengalaman pertama pendarahan panjang, Anda wajib menanti (meninggalkan sholat) selama 15 hari. Kini setelah terbukti Istihadloh, Anda wajib mandi besar dan mengqodlo sholat yang ditinggalkan dari hari ke-2 hingga ke-15.`);
-            } else if (d.isBlood) {
-                qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Darah Istihadloh). Anda meninggalkan sholat pada saat darah keluar yang ternyata dihukumi Istihadloh.`);
-            } else {
-                qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Berhenti Darah di Masa Istihadloh). Anda meninggalkan sholat pada saat darah berhenti namun status hukumnya adalah Istihadloh.`);
-            }
+        if (isFirstMonth && !isHaid && d.dayNumber <= 15 && d.isBlood) {
+            qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Menanti 15 Hari). Karena Anda belum memiliki kebiasaan (adat) dan ini pengalaman pertama pendarahan panjang, Anda diwajibkan menanti (meninggalkan sholat) hingga hari ke-15. Setelah terbukti bahwa hari ke-${d.dayNumber} ini adalah Istihadloh, Anda wajib mandi besar dan mengqodlo sholat pada hari ini.`);
         }
     });
 
@@ -1041,36 +1150,43 @@ export function evaluateMubtadiahGhoiruMumayyizah(days: DayStrength[], isFirstMo
     let category = "Golongan 2: Mubtadi'ah Ghoiru Mumayyizah Haidl";
     let analysis = "Status: Ghoiru Mumayyizah. Karena darah tidak bisa dibedakan kekuatannya, maka haid ditetapkan 1 hari (24 jam) dan sisa 29 hari berikutnya Istihadloh (Siklus 30 hari).";
 
+    const waitingDaysInfo = days.filter((d, idx) => {
+        const cycleDay = (idx % 30) + 1;
+        const isHaid = cycleDay === 1;
+        return isFirstMonth && !isHaid && d.dayNumber <= 15 && d.isBlood;
+    });
+    const minWaitingDay = waitingDaysInfo.length > 0 ? Math.min(...waitingDaysInfo.map(d => d.dayNumber)) : 2;
+    const maxWaitingDay = waitingDaysInfo.length > 0 ? Math.max(...waitingDaysInfo.map(d => d.dayNumber)) : 15;
+    const totalWaitingDays = waitingDaysInfo.length;
+
     days.forEach((d, idx) => {
         // Siklus 30 hari: Hari ke-1 Haid, ke-2 s/d 30 Istihadloh
         const cycleDay = (idx % 30) + 1;
         const isHaid = cycleDay === 1;
         const isWaiting = isFirstMonth && d.dayNumber <= 15;
+        const status = isHaid ? 'Haid' : (d.isBlood ? 'Istihadloh' : 'Suci');
+        const reason = isHaid 
+            ? "Haid standar mubtadi'ah ghoiru mumayyizah (24 jam pertama)." 
+            : (d.isBlood ? "Istihadloh (Masa suci 29 hari dalam siklus 30 hari)." : "Masa suci.");
 
         statusTimeline.push({
             day: d.dayNumber,
             date: d.date,
-            status: isHaid ? 'Haid' : 'Istihadloh',
+            status,
             isBlood: d.isBlood,
             isFirstMonthWaiting: isWaiting && !isHaid,
-            reason: isHaid ? "Haid standar mubtadi'ah ghoiru mumayyizah (24 jam pertama)." : "Istihadloh (Masa suci 29 hari dalam siklus 30 hari)."
+            reason
         });
 
         // Logika Qodlo
-        if (isFirstMonth && !isHaid && d.dayNumber <= 15) {
-            if (isWaiting) {
-                qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Menanti 15 Hari). Total 14 Hari WAJIB DIQODLO. Karena Anda belum memiliki kebiasaan (adat), Anda diwajibkan menanti masa maksimal haid (15 hari). Kini setelah terbukti Istihadloh, Anda wajib mandi dan mengganti sholat dari hari ke-2 hingga ke-15.`);
-            } else if (d.isBlood) {
-                qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Darah Istihadloh). Anda meninggalkan sholat pada saat darah keluar yang ternyata dihukumi Istihadloh.`);
-            } else {
-                qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Berhenti Darah di Masa Istihadloh). Anda meninggalkan sholat pada saat darah berhenti namun status hukumnya adalah Istihadloh.`);
-            }
+        if (isFirstMonth && !isHaid && d.dayNumber <= 15 && d.isBlood) {
+            qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Menanti 15 Hari). Karena Anda belum memiliki kebiasaan (adat) dan ini pengalaman pertama pendarahan panjang, Anda diwajibkan menanti (meninggalkan sholat) hingga hari ke-15. Setelah terbukti bahwa hari ke-${d.dayNumber} ini adalah Istihadloh, Anda wajib mandi besar dan mengqodlo sholat pada hari ini.`);
         }
     });
 
     const specialNotes: string[] = [];
     if (isFirstMonth) {
-        specialNotes.push("Aturan Mandi (Bulan Pertama): Anda wajib menanti (meninggalkan sholat) selama 15 hari. Begitu genap 15 hari, Anda wajib mandi besar dan mengqodlo sholat dari hari ke-2 sampai hari ke-15.");
+        specialNotes.push(`Aturan Mandi (Bulan Pertama): Anda wajib menanti (meninggalkan sholat) selama 15 hari. Begitu genap 15 hari, Anda wajib mandi besar dan mengqodlo sholat pada hari-hari pendarahan Istihadloh dari hari ke-${minWaitingDay} sampai hari ke-${maxWaitingDay}.`);
     } else {
         specialNotes.push("Aturan Mandi (Bulan Kedua+): Anda cukup mandi besar segera setelah darah keluar genap 24 jam (hari ke-1). Setelah itu Anda wajib sholat meskipun darah masih keluar (Istihadloh).");
         specialNotes.push("Untuk bulan ini dan seterusnya, Anda tidak memiliki hutang qodlo sholat 14 hari.");
@@ -1109,7 +1225,7 @@ export function evaluateMutadahMumayyizah(days: DayStrength[], habit: UserHabit,
     let analysis = "";
 
     if (isFirstMonth) {
-        specialNotes.push("Meskipun ini bulan pertama Anda mengalami pendarahan panjang, Anda sudah memiliki kebiasaan (adat). Anda cukup menanti selama durasi adat haid Anda. Begitu melewati durasi adat tersebut, Anda WAJIB segera mandi besar dan mulai sholat.");
+        specialNotes.push("Catatan Bulan Pertama: Karena ini adalah bulan pertama terjadinya pendarahan panjang melebihi adat, Anda wajib menanti hingga genap 15 hari (batas maksimal haid) untuk melihat apakah darah berhenti atau berlanjut, guna memastikan status istihadoh Anda. Selama masa tunggu 15 hari ini, Anda dilarang beribadah (shalat, puasa, dll) karena secara zhohir masih dihukumi haid. Setelah melewati hari ke-15 dan darah terbukti melampaui batas maksimal haid, Anda wajib mandi besar, kembali beribadah, dan mengqodlo shalat fardhu pada hari-hari istihadloh yang Anda tinggalkan selama masa tunggu tersebut.");
     }
 
     // Cek apakah lemah di awal
@@ -1169,39 +1285,52 @@ export function evaluateMutadahMumayyizah(days: DayStrength[], habit: UserHabit,
         } else {
             // Tamyiz menang: Kuat dihukumi Haid (dari kuat pertama sampai kuat terakhir)
             category = "Mu'tadah Mumayyizah";
-            const firstStrongIdx = days.findIndex(d => d.isStrong);
-            const lastStrongIdx = days.map(d => d.isStrong).lastIndexOf(true);
-            const totalRange = (lastStrongIdx - firstStrongIdx + 1);
-            const isWithin15Days = totalRange <= 15;
+            const haidIndices = new Set<number>();
             
-            days.forEach((d, idx) => {
-                let isHaid = false;
-                if (firstStrongIdx !== -1 && lastStrongIdx !== -1 && idx >= firstStrongIdx && idx <= lastStrongIdx) {
-                    if (isWithin15Days) {
-                        isHaid = true;
-                    } else if (d.isStrong) {
-                        isHaid = true;
+            // 1. Tambahkan semua hari dari sesi kuat ke haidIndices
+            sessions.forEach(s => {
+                if (s.type === 'strong') {
+                    s.days.forEach(d => haidIndices.add(days.indexOf(d)));
+                }
+            });
+
+            // 2. Lakukan penggabungan (merging) untuk sesi kuat yang jaraknya berdekatan (total rentang <= 15 hari)
+            const strongSessionIndices = sessions.map((s, idx) => s.type === 'strong' ? idx : -1).filter(idx => idx !== -1);
+            for (let x = 0; x < strongSessionIndices.length - 1; x++) {
+                const i = strongSessionIndices[x];
+                const j = strongSessionIndices[x + 1];
+                
+                const firstDayOfI = sessions[i].days[0];
+                const lastDayOfJ = sessions[j].days[sessions[j].days.length - 1];
+                const dayIdxOfI = days.indexOf(firstDayOfI);
+                const dayIdxOfJ = days.indexOf(lastDayOfJ);
+                
+                const totalSpan = dayIdxOfJ - dayIdxOfI + 1;
+                if (totalSpan <= 15) {
+                    for (let k = dayIdxOfI; k <= dayIdxOfJ; k++) {
+                        haidIndices.add(k);
                     }
                 }
-
+            }
+            
+            days.forEach((d, idx) => {
+                const isHaid = haidIndices.has(idx);
                 const isWaiting = false;
+                const status = isHaid ? 'Haid' : (d.isBlood ? 'Istihadloh' : 'Suci');
+                const reason = isHaid 
+                    ? (d.isStrong ? "Darah Kuat (Haid). Tamyiz mengalahkan Adat." : "Masa berhenti/lemah di sela-sela darah kuat (Haid - Hukum Jam'u karena total <= 15 hari).") 
+                    : (d.isBlood ? "Istihadloh (Darah Lemah)." : "Masa suci.");
                 statusTimeline.push({
                     day: d.dayNumber,
                     date: d.date,
-                    status: isHaid ? 'Haid' : 'Istihadloh',
+                    status,
                     isBlood: d.isBlood,
                     isFirstMonthWaiting: isWaiting && !isHaid,
-                    reason: isHaid 
-                        ? (d.isStrong ? "Darah Kuat (Haid). Tamyiz mengalahkan Adat." : "Masa berhenti/lemah di sela-sela darah kuat (Haid - Hukum Jam'u karena total <= 15 hari).") 
-                        : (firstStrongIdx !== -1 && idx >= firstStrongIdx && idx <= lastStrongIdx ? "Istihadloh (Darah Lemah di sela-sela darah kuat yang totalnya > 15 hari). Tamyiz Level 2." : "Istihadloh.")
+                    reason
                 });
                 if (isFirstMonth && !isHaid && d.dayNumber <= 15) {
                   if (d.isBlood) {
-                    if (isWaiting) {
-                      qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Menanti 15 Hari). Anda menanti 15 hari karena pengalaman pertama istihadloh, ternyata dihukumi Istihadloh karena Tamyiz.`);
-                    } else {
-                      qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Darah Istihadloh). Anda meninggalkan sholat pada saat darah keluar yang ternyata dihukumi Istihadloh.`);
-                    }
+                    qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Darah Istihadloh). Anda meninggalkan sholat pada saat darah keluar yang ternyata dihukumi Istihadloh.`);
                   } else {
                     qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Berhenti Darah di Masa Istihadloh). Anda meninggalkan sholat pada saat darah berhenti namun status hukumnya adalah Istihadloh.`);
                   }
@@ -1210,39 +1339,53 @@ export function evaluateMutadahMumayyizah(days: DayStrength[], habit: UserHabit,
         }
     } else {
         // Kuat di awal: Tamyiz menang mutlak (sampai kuat terakhir)
-        const firstStrongIdx = days.findIndex(d => d.isStrong);
-        const lastStrongIdx = days.map(d => d.isStrong).lastIndexOf(true);
-        const totalRange = (lastStrongIdx - firstStrongIdx + 1);
-        const isWithin15Days = totalRange <= 15;
+        category = "Mu'tadah Mumayyizah";
+        const haidIndices = new Set<number>();
+        
+        // 1. Tambahkan semua hari dari sesi kuat ke haidIndices
+        sessions.forEach(s => {
+            if (s.type === 'strong') {
+                s.days.forEach(d => haidIndices.add(days.indexOf(d)));
+            }
+        });
 
-        days.forEach((d, idx) => {
-            let isHaid = false;
-            if (firstStrongIdx !== -1 && lastStrongIdx !== -1 && idx >= firstStrongIdx && idx <= lastStrongIdx) {
-                if (isWithin15Days) {
-                    isHaid = true;
-                } else if (d.isStrong) {
-                    isHaid = true;
+        // 2. Lakukan penggabungan (merging) untuk sesi kuat yang jaraknya berdekatan (total rentang <= 15 hari)
+        const strongSessionIndices = sessions.map((s, idx) => s.type === 'strong' ? idx : -1).filter(idx => idx !== -1);
+        for (let x = 0; x < strongSessionIndices.length - 1; x++) {
+            const i = strongSessionIndices[x];
+            const j = strongSessionIndices[x + 1];
+            
+            const firstDayOfI = sessions[i].days[0];
+            const lastDayOfJ = sessions[j].days[sessions[j].days.length - 1];
+            const dayIdxOfI = days.indexOf(firstDayOfI);
+            const dayIdxOfJ = days.indexOf(lastDayOfJ);
+            
+            const totalSpan = dayIdxOfJ - dayIdxOfI + 1;
+            if (totalSpan <= 15) {
+                for (let k = dayIdxOfI; k <= dayIdxOfJ; k++) {
+                    haidIndices.add(k);
                 }
             }
+        }
 
+        days.forEach((d, idx) => {
+            const isHaid = haidIndices.has(idx);
             const isWaiting = false;
+            const status = isHaid ? 'Haid' : (d.isBlood ? 'Istihadloh' : 'Suci');
+            const reason = isHaid 
+                ? (d.isStrong ? "Darah Kuat (Haid). Tamyiz mengalahkan Adat." : "Masa berhenti/lemah di sela-sela darah kuat (Haid - Hukum Jam'u karena total <= 15 hari).") 
+                : (d.isBlood ? "Istihadloh (Darah Lemah)." : "Masa suci.");
             statusTimeline.push({
                 day: d.dayNumber,
                 date: d.date,
-                status: isHaid ? 'Haid' : 'Istihadloh',
+                status,
                 isBlood: d.isBlood,
                 isFirstMonthWaiting: isWaiting && !isHaid,
-                reason: isHaid 
-                    ? (d.isStrong ? "Darah Kuat (Haid). Tamyiz mengalahkan Adat." : "Masa berhenti/lemah di sela-sela darah kuat (Haid - Hukum Jam'u karena total <= 15 hari).") 
-                    : (firstStrongIdx !== -1 && idx >= firstStrongIdx && idx <= lastStrongIdx ? "Istihadloh (Darah Lemah di sela-sela darah kuat yang totalnya > 15 hari). Tamyiz Level 2." : "Istihadloh.")
+                reason
             });
             if (isFirstMonth && !isHaid && d.dayNumber <= 15) {
               if (d.isBlood) {
-                if (isWaiting) {
-                  qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Menanti 15 Hari). Karena pengalaman pertama pendarahan panjang, Anda menanti 15 hari, ternyata hukumnya Istihadloh menurut Tamyiz.`);
-                } else {
-                  qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Darah Istihadloh). Anda meninggalkan sholat pada saat darah keluar yang ternyata dihukumi Istihadloh.`);
-                }
+                qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Darah Istihadloh). Anda meninggalkan sholat pada saat darah keluar yang ternyata dihukumi Istihadloh.`);
               } else {
                 qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Berhenti Darah di Masa Istihadloh). Anda meninggalkan sholat pada saat darah berhenti namun status hukumnya adalah Istihadloh.`);
               }
@@ -1282,7 +1425,7 @@ export function evaluateMutadahGhoiruMumayyizahDzakiroh(days: DayStrength[], hab
     let purificationInstructions: string[] = [];
 
     if (isFirstMonth) {
-        specialNotes.push("Catatan Bulan Pertama: Meskipun mengalami pendarahan panjang melebihi 15 hari untuk pertama kalinya, karena Anda sudah memiliki pola adat sebelumnya, Anda tidak perlu menanti hingga 15 hari untuk ibadah. Cukup ikuti durasi adat haid aktif Anda. Begitu melewati hari adat tersebut, Anda wajib segera mandi besar dan shalat fardhu.");
+        specialNotes.push("Catatan Bulan Pertama: Karena ini adalah bulan pertama terjadinya pendarahan panjang melebihi adat, Anda wajib menanti hingga genap 15 hari (batas maksimal haid) untuk melihat apakah darah berhenti atau berlanjut, guna memastikan status istihadoh Anda. Selama masa tunggu 15 hari ini, Anda dilarang beribadah (shalat, puasa, dll) karena secara zhohir masih dihukumi haid. Setelah melewati hari ke-15 dan darah terbukti melampaui batas maksimal haid, Anda wajib mandi besar, kembali beribadah, dan mengqodlo shalat fardhu pada hari-hari istihadloh yang Anda tinggalkan selama masa tunggu tersebut.");
     }
 
     // Kita gunakan calculationMonthIndex untuk penentuan pola (misal pola: 3, 5, 7)
@@ -1327,32 +1470,59 @@ export function evaluateMutadahGhoiruMumayyizahDzakiroh(days: DayStrength[], hab
             `Langkah bersuci di Fase Ihtiyath: Bersihkan kemaluan -> Balut/seka -> Mandi fardhu (pada akhir hari yang ditentukan) -> Berwudhu fardhu -> Segera mendirikan shalat.`
         ];
 
-        days.forEach(d => {
+        days.forEach((d, idx) => {
             const isWaiting = false;
-            let status: 'Haid' | 'Ihtiyath' | 'Istihadloh';
+            let status: string;
             let reason: string;
 
             if (d.dayNumber <= minDur) {
-                status = 'Haid';
-                reason = `Haid Yakin (Hari ke-${d.dayNumber} <= batas durasi minimal adat ${minDur} hari).`;
+                if (d.isBlood) {
+                    status = 'Haid';
+                    reason = `Haid Yakin (Hari ke-${d.dayNumber} <= batas durasi minimal adat ${minDur} hari).`;
+                } else {
+                    // Check if flanked by blood within minDur on both sides
+                    let leftHasHaidBlood = false;
+                    for (let l = idx - 1; l >= 0; l--) {
+                        if (days[l].dayNumber <= minDur && days[l].isBlood) {
+                            leftHasHaidBlood = true;
+                            break;
+                        }
+                    }
+                    let rightHasHaidBlood = false;
+                    for (let r = idx + 1; r < days.length; r++) {
+                        if (days[r].dayNumber <= minDur && days[r].isBlood) {
+                            rightHasHaidBlood = true;
+                            break;
+                        }
+                    }
+                    if (leftHasHaidBlood && rightHasHaidBlood) {
+                        status = 'Haid';
+                        reason = `Masa berhenti di sela-sela Haid Yakin (Hukum Jam'u).`;
+                    } else {
+                        status = 'Suci';
+                        reason = `Masa bersih/mati darah di sela pendarahan (Diapit Haid & Istihadloh, Hukum Jam'u gugur, dihukumi SUCI).`;
+                    }
+                }
             } else if (d.dayNumber <= maxDur) {
                 status = 'Ihtiyath';
                 reason = `Masa Kehati-hatian / Ihtiyath (Hari ke-${d.dayNumber} berada di rentang ketidakpastian adat ${minDur + 1} s.d ${maxDur} hari). Wajib sholat & puasa fardhu, tetap dilarang jima' & membaca Quran secara lisan.`;
             } else {
-                status = 'Istihadloh';
-                reason = `Istihadloh / Yakin Suci (Hari ke-${d.dayNumber} > batas durasi maksimal adat ${maxDur} hari).`;
+                status = d.isBlood ? 'Istihadloh' : 'Suci';
+                reason = d.isBlood 
+                    ? `Istihadloh / Yakin Suci (Hari ke-${d.dayNumber} > batas durasi maksimal adat ${maxDur} hari).` 
+                    : "Masa suci.";
             }
 
             statusTimeline.push({ 
                 day: d.dayNumber, 
                 date: d.date, 
-                status: status === 'Haid' ? 'Haid' : (status === 'Istihadloh' ? 'Istihadloh' : 'Ihtiyath'), 
+                status: status === 'Haid' ? 'Haid' : (status === 'Istihadloh' ? 'Istihadloh' : (status === 'Suci' ? 'Suci' : 'Ihtiyath')), 
                 isBlood: d.isBlood,
                 reason,
                 isFirstMonthWaiting: isWaiting && status !== 'Haid'
             });
 
-            if (isFirstMonth && status === 'Istihadloh' && d.dayNumber <= 15) {
+            if (isFirstMonth && (status === 'Istihadloh' || status === 'Suci') && d.dayNumber <= 15) {
                 if (d.isBlood) {
                     qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Darah Istihadloh - Melebihi Adat Maksimal). Sholat wajib dilaksanakan karena status hukumnya ternyata suci.`);
                 } else {
@@ -1403,22 +1573,63 @@ export function evaluateMutadahGhoiruMumayyizahDzakiroh(days: DayStrength[], hab
         const adatSuci = habit.habitSuci || (30 - activeDur);
         const siklusAdat = activeDur + adatSuci;
         
-        days.forEach(d => {
+        days.forEach((d, idx) => {
             const posisi = (d.dayNumber - 1) % siklusAdat;
-            const isHaid = posisi < activeDur;                
+            const isHaidZone = posisi < activeDur;
             const isWaiting = false;
+            
+            let status = 'Suci';
+            let reason = 'Masa suci.';
+            
+            if (isHaidZone) {
+                if (d.isBlood) {
+                    status = 'Haid';
+                    reason = `Haid sesuai Adat aktif (${activeDur} hari).`;
+                } else {
+                    // Check if flanked by blood within the Haid zone on both left and right
+                    let leftHasHaidBlood = false;
+                    for (let l = idx - 1; l >= 0; l--) {
+                        const lPos = (days[l].dayNumber - 1) % siklusAdat;
+                        const lIsHaidZone = lPos < activeDur;
+                        if (lIsHaidZone && days[l].isBlood) {
+                            leftHasHaidBlood = true;
+                            break;
+                        }
+                    }
+                    
+                    let rightHasHaidBlood = false;
+                    for (let r = idx + 1; r < days.length; r++) {
+                        const rPos = (days[r].dayNumber - 1) % siklusAdat;
+                        const rIsHaidZone = rPos < activeDur;
+                        if (rIsHaidZone && days[r].isBlood) {
+                            rightHasHaidBlood = true;
+                            break;
+                        }
+                    }
+                    
+                    if (leftHasHaidBlood && rightHasHaidBlood) {
+                        status = 'Haid';
+                        reason = `Masa berhenti di sela-sela Haid Adat aktif (Hukum Jam'u).`;
+                    } else {
+                        status = 'Suci';
+                        reason = `Masa bersih/mati darah di sela pendarahan (Diapit Haid & Istihadloh, Hukum Jam'u gugur, dihukumi SUCI).`;
+                    }
+                }
+            } else {
+                status = d.isBlood ? 'Istihadloh' : 'Suci';
+                reason = d.isBlood ? "Istihadloh (Masa Suci Adat)." : "Masa suci.";
+            }
             
             statusTimeline.push({
                 day: d.dayNumber,
                 date: d.date,
-                status: isHaid ? 'Haid' : 'Istihadloh',
+                status,
                 isBlood: d.isBlood,
-                isFirstMonthWaiting: isWaiting && !isHaid,
-                reason: isHaid 
-                    ? (d.isBlood ? `Haid sesuai Adat aktif (${activeDur} hari).` : `Masa berhenti di sela-sela Haid Adat aktif (Hukum Jam'u).`)
-                    : "Istihadloh (Masa Suci Adat)."
+                isFirstMonthWaiting: isWaiting && status !== 'Haid',
+                reason
             });
 
+            const isHaid = status === 'Haid';
             if (isFirstMonth && !isHaid && d.dayNumber <= 15) {
                 if (d.isBlood) {
                     qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodlo (Kasus Darah Istihadloh). Anda meninggalkan shalat pada saat darah keluar yang ternyata dihukumi Istihadloh karena melampaui durasi adat.`);
@@ -2006,6 +2217,24 @@ export function analyzeFiqhLocal(data: FiqhAnalysisRequest): FiqhAnalysisResult 
     result = determineStatus(days, experience, defaultHabit, context);
   }
 
+  // Apply Aturan Emas for Hukum Jam'u on Naqo' (masa bersih) using simple Boundary Logic
+  if (result && result.statusTimeline) {
+    const sessions = getSessions(days);
+    const strongDays = days.filter(d => d.isStrong);
+    const weakDays = days.filter(d => !d.isStrong);
+    const isTamyizValid = checkTamyiz(strongDays, weakDays, sessions, records);
+
+    result.statusTimeline = applyHukumJamUAturanEmas(
+      result.statusTimeline,
+      days,
+      defaultHabit,
+      context,
+      experience,
+      data.calculationMonthIndex || 0,
+      isTamyizValid
+    );
+  }
+
   // 5. Integrasi Qodlo
   const { qodloSholat, totalQodloPuasa } = calculateQodlo(
     result.statusTimeline, 
@@ -2017,6 +2246,11 @@ export function analyzeFiqhLocal(data: FiqhAnalysisRequest): FiqhAnalysisResult 
   );
 
   const isTerputusFlow = bloodDayIndices.length > 1 && (bloodDayIndices[bloodDayIndices.length - 1] - bloodDayIndices[0] + 1) > bloodDayIndices.length;
+
+  const parsedStatusTimeline = result.statusTimeline || [];
+  const isJamUActive = parsedStatusTimeline.some((item: any) => 
+    !item.isBlood && (item.status === 'Haid' || item.status === 'Nifas')
+  );
 
   // Cleanup special notes to avoid hallucinations about intermittent bleeding
   if (!isTerputusFlow && result.specialNotes) {
@@ -2039,15 +2273,19 @@ export function analyzeFiqhLocal(data: FiqhAnalysisRequest): FiqhAnalysisResult 
       if (!result.specialNotes.some(n => n.includes("WAJIB segera mandi besar"))) {
         result.specialNotes.push("Hukum Berhenti (Darah Sudah 24 Jam): Karena total darah sudah mencapai minimal haid (24 jam), maka SETIAP KALI darah berhenti (dengan memastikan tampon tidak lagi bernoda) meskipun belum 15 hari, Anda WAJIB segera mandi besar (janabah), melaksanakan sholat, dan puasa.");
       }
-      result.specialNotes.push("Kebolehan Pasutri: Selama darah berhenti di sela-sela masa haid, suami diperbolehkan menggauli istrinya menurut riwayat yang kuat karena secara zahir darah yang berhenti dihukumi suci.");
-      result.specialNotes.push(`PENTING (Hukum Jam'u): Karena darah keluar kembali dalam rentang masa maksimal, maka hari-hari berhenti di sela darah tersebut dihukumi ${context.toUpperCase()}. Sholat yang Anda kerjakan di hari jeda tersebut tidak sah (tapi tidak berdosa dan tidak perlu diqodlo). Namun, jika bertepatan dengan puasa RAMADHAN, maka puasa di hari jeda tersebut BATAL dan WAJIB DIQODLO.`);
+      if (isJamUActive) {
+        result.specialNotes.push("Kebolehan Pasutri: Selama darah berhenti di sela-sela masa haid, suami diperbolehkan menggauli istrinya menurut riwayat yang kuat karena secara zahir darah yang berhenti dihukumi suci.");
+        result.specialNotes.push(`PENTING (Hukum Jam'u): Karena darah keluar kembali dalam rentang masa maksimal, maka hari-hari berhenti di sela darah tersebut dihukumi ${context.toUpperCase()}. Sholat yang Anda kerjakan di hari jeda tersebut tidak sah (tapi tidak berdosa dan tidak perlu diqodlo). Namun, jika bertepatan dengan puasa RAMADHAN, maka puasa di hari jeda tersebut BATAL dan WAJIB DIQODLO.`);
+      } else {
+        result.specialNotes.push("Status Masa Berhenti (Suci): Karena masa berhenti/jeda pendarahan Anda berada di luar masa haid/nifas (tidak ditarik menjadi haid), maka hari jeda tersebut sepenuhnya dihukumi SUCI secara fiqh. Ibadah sholat dan puasa yang Anda lakukan di hari jeda tersebut sah demi hukum.");
+      }
     }
   }
 
   if (isRamadhan && totalQodloPuasa > 0) {
     result.specialNotes = result.specialNotes || [];
     if (!result.specialNotes.some(n => n.includes("hutang qodlo puasa"))) {
-       if (isTerputusFlow) {
+       if (isTerputusFlow && isJamUActive) {
          result.specialNotes.push(`Status Puasa: Anda memiliki hutang qodlo puasa sebanyak ${totalQodloPuasa} hari. Hari jeda bersih di sela haid/nifas tetap wajib diqodlo jika bertepatan dengan puasa Ramadhan.`);
        } else {
          result.specialNotes.push(`Status Puasa: Anda memiliki hutang qodlo puasa sebanyak ${totalQodloPuasa} hari.`);
@@ -2166,11 +2404,26 @@ function getCategoryReason(shortCategory: string, category: string, hasGaps: boo
   const hasGaps = parsedBloodIndices.length > 1 && 
     (parsedBloodIndices[parsedBloodIndices.length - 1] - parsedBloodIndices[0] + 1) > parsedBloodIndices.length;
 
+  const cleanSpecialNotes = Array.from(new Set(finalResult.specialNotes || []))
+    .map((s: string) => s.trim())
+    .filter(Boolean);
+
+  const cleanPurification = Array.from(new Set(finalResult.purificationInstructions || []))
+    .map((s: string) => s.trim())
+    .filter(Boolean);
+
+  const cleanQadho = Array.from(new Set(finalResult.qadhoObligations || []))
+    .map((s: string) => s.trim())
+    .filter(Boolean);
+
   return {
     ...finalResult,
+    specialNotes: cleanSpecialNotes,
+    purificationInstructions: cleanPurification,
+    qadhoObligations: cleanQadho,
     categoryReason: getCategoryReason(finalResult.shortCategory || "", finalResult.category || "", hasGaps),
     groupedTimeline: groupTimeline(finalResult.statusTimeline),
-    groupedQadho: groupQodlo(finalResult.qadhoObligations)
+    groupedQadho: groupQodlo(cleanQadho)
   };
 }
 
@@ -2191,4 +2444,111 @@ export function checkIfMumayyizah(records: DayRecord[]): boolean {
     const strongDays = days.filter(d => d.isStrong);
     const weakDays = days.filter(d => !d.isStrong);
     return checkTamyiz(strongDays, weakDays, sessions, records);
+}
+
+/**
+ * ATURAN EMAS HUKUM JAM'U UNTUK MASA BERSIH (NAQO'):
+ * Hukum Jam'u TIDAK AKAN PERNAH BERLAKU jika darah yang keluar kembali (setelah masa bersih) berstatus Istihadoh.
+ * Masa bersih tersebut harus tetap dihukumi Suci (dan sebaliknya jika dalam masa haid yang sesungguhnya).
+ */
+/**
+ * ATURAN EMAS & BATAS WILAYAH HUKUM JAM'U UNTUK MASA BERSIH (NAQO'):
+ * Menentukan batas wilayah haid/nifas secara dinamis, kemudian memindai setiap jeda bersih.
+ * Jika jeda bersih berada <= Batas Wilayah ➡️ Dihukumi Haid/Nifas (Hukum Jam'u).
+ * Jika jeda bersih berada > Batas Wilayah ➡️ Dihukumi Istihadloh atau Suci (jika tidak ada darah lagi setelahnya).
+ */
+function applyHukumJamUAturanEmas(
+  timeline: any[],
+  days: DayStrength[],
+  habit: UserHabit,
+  context: string,
+  experience: string,
+  calculationMonthIndex: number = 0,
+  isTamyizValid: boolean = false
+): any[] {
+  if (!timeline || timeline.length === 0) return timeline;
+
+  const maxDays = context === 'nifas' ? 60 : 15;
+  const totalSpan = timeline.length;
+
+  // 1. Tentukan Batas Wilayah Haidl / Nifas secara dinamis tanpa hardcoding
+  let Batas_Wilayah = maxDays; // Default to max limit (15 for haid, 60 for nifas) for normal case
+  
+  if (totalSpan > maxDays) {
+    if (context === 'nifas') {
+      const nifasDurs = habit.durationsNifas && habit.durationsNifas.length > 0 ? habit.durationsNifas : [habit.durationNifas || 40];
+      const allSame = nifasDurs.every(d => d === nifasDurs[0]);
+      let activeNifasDur = 40;
+      if (allSame) {
+        activeNifasDur = nifasDurs[0];
+      } else {
+        activeNifasDur = nifasDurs[nifasDurs.length - 1];
+      }
+      Batas_Wilayah = Math.min(activeNifasDur || 40, 60);
+    } else {
+      // Context: Haid
+      if (isTamyizValid) {
+        const strongDays = days.filter(d => d.isStrong);
+        if (strongDays.length > 0) {
+          Batas_Wilayah = Math.max(...strongDays.map(d => d.dayNumber));
+        } else {
+          Batas_Wilayah = habit.duration || 7;
+        }
+      } else if (experience === 'mubtadiah') {
+        Batas_Wilayah = 1; // Standard haid mubtadiah ghoiru mumayyizah
+      } else {
+        // Mu'tadah or other cases using Adat
+        const durs = habit.durations && habit.durations.length > 0 ? habit.durations : [habit.duration || 7];
+        Batas_Wilayah = determineActiveAdat(durs, calculationMonthIndex);
+      }
+      Batas_Wilayah = Math.min(Batas_Wilayah, 15); // Batas maksimal haid berkala
+    }
+  }
+
+  const corrected = timeline.map((item: any) => ({ ...item }));
+
+  // 2. Pindai (scan) HANYA hari-hari bersih (tidak keluar darah, isBlood === false) untuk menerapkan logika Jam'u diapit darah haid/nifas.
+  // JANGAN PERNAH mengubah status hari yang keluar darah (isBlood === true) karena sudah dihitung secara akurat oleh masing-masing fungsi golongan.
+  // Juga JANGAN PERNAH mengubah hari yang statusnya 'Ihtiyath' (Masa Kehati-hatian) agar tidak merusak fardh dari kasus Mutahayyiroh atau Lupa Urutan.
+  for (let i = 0; i < corrected.length; i++) {
+    const current = corrected[i];
+
+    if (!current.isBlood && current.status !== 'Ihtiyath') {
+      // Cari darah terdekat sebelumnya yang sah (Haid/Nifas)
+      let prevBlood: any = null;
+      for (let l = i - 1; l >= 0; l--) {
+        if (corrected[l].isBlood) {
+          prevBlood = corrected[l];
+          break;
+        }
+      }
+
+      // Cari darah terdekat berikutnya yang sah (Haid/Nifas)
+      let nextBlood: any = null;
+      for (let r = i + 1; r < corrected.length; r++) {
+        if (corrected[r].isBlood) {
+          nextBlood = corrected[r];
+          break;
+        }
+      }
+
+      // Syarat diapit darah haid/nifas yang sah:
+      // - Berada di dalam wilayah imkan (kemungkinan) haid (day <= Batas_Wilayah)
+      // - Ada darah haid/nifas di kiri dan di kanan
+      const isDiapitHaid = 
+        prevBlood && (prevBlood.status === 'Haid' || prevBlood.status === 'Nifas') &&
+        nextBlood && (nextBlood.status === 'Haid' || nextBlood.status === 'Nifas');
+
+      if (isDiapitHaid && current.day <= Batas_Wilayah) {
+        current.status = context === 'nifas' ? 'Nifas' : 'Haid';
+        current.reason = `Masa berhenti (jeda bersih) di sela-sela ${context === 'nifas' ? 'Nifas' : 'Haid'} (Hukum Jam'u karena diapit oleh darah ${context === 'nifas' ? 'Nifas' : 'Haid'} yang sah dan berada di dalam Wilayah ${context === 'nifas' ? 'Nifas' : 'Haid'} <= ${Batas_Wilayah} hari).`;
+      } else {
+        // Jika tidak diapit atau berada di luar wilayah haid/nifas, maka dihukumi Suci (tidak ditarik menjadi haid)
+        current.status = 'Suci';
+        current.reason = `Masa bersih (Hukum Jam'u tidak berlaku karena tidak diapit oleh darah ${context === 'nifas' ? 'Nifas' : 'Haid'} yang aktif/sah atau berada di luar Wilayah ${context === 'nifas' ? 'Nifas' : 'Haid'} > ${Batas_Wilayah} hari).`;
+      }
+    }
+  }
+
+  return corrected;
 }

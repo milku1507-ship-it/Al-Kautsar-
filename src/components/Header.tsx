@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Menu, ChevronLeft } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -13,6 +13,22 @@ interface HeaderProps {
 
 export default function Header({ onMenuClick, title, description, showBack, children }: HeaderProps) {
   const navigate = useNavigate();
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   return (
     <header className="h-20 md:h-24 border-b border-border-main flex items-center justify-between px-6 md:px-12 bg-bg-main/50 backdrop-blur-md sticky top-0 z-10">
@@ -35,7 +51,19 @@ export default function Header({ onMenuClick, title, description, showBack, chil
           )}
         </div>
       </div>
-      <div className="flex gap-2 md:gap-4 ml-4">
+      <div className="flex items-center gap-2 md:gap-4 ml-4">
+        {/* Dynamic PWA Online/Offline Indicator */}
+        {isOnline ? (
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-xs">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span>Online</span>
+          </div>
+        ) : (
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 shadow-xs">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+            <span>Offline Ready</span>
+          </div>
+        )}
         {children}
       </div>
     </header>

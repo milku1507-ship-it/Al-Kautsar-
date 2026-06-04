@@ -99,12 +99,13 @@ export default function App() {
 
   const [lastClickedDate, setLastClickedDate] = useState<Date | null>(null);
 
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+
   const resetCalendar = () => {
-    if (window.confirm("Apakah Anda yakin ingin mereset seluruh kalender? Semua data darah akan dihapus.")) {
-      setRecords([]);
-      setLastClickedDate(null);
-      setSelectedDate(null);
-    }
+    setRecords([]);
+    setLastClickedDate(null);
+    setSelectedDate(null);
+    setShowResetConfirm(false);
   };
 
   // Step 3: Riwayat Adat
@@ -449,12 +450,30 @@ export default function App() {
               <ChevronRight className="w-5 h-5" />
             </button>
           </div>
-          <button 
-            onClick={resetCalendar}
-            className="flex items-center justify-center gap-2 px-4 py-2 bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 rounded-xl text-[10px] font-bold uppercase hover:bg-red-500/20 transition-all cursor-pointer"
-          >
-            <Trash2 className="w-3.5 h-3.5" /> Reset Kalender
-          </button>
+          {!showResetConfirm ? (
+            <button 
+              onClick={() => setShowResetConfirm(true)}
+              className="flex items-center justify-center gap-2 px-4 py-2 bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 rounded-xl text-[10px] font-bold uppercase hover:bg-red-500/20 transition-all cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Reset Kalender
+            </button>
+          ) : (
+            <div className="flex items-center gap-1.5 animate-in fade-in zoom-in-95 duration-200">
+              <span className="text-[10px] uppercase font-black text-red-600 dark:text-red-400 mr-1 animate-pulse">Yakin reset?</span>
+              <button 
+                onClick={resetCalendar}
+                className="px-2.5 py-1.5 bg-red-600 text-white rounded-lg text-[10px] font-bold uppercase hover:bg-red-700 transition-all cursor-pointer"
+              >
+                Ya
+              </button>
+              <button 
+                onClick={() => setShowResetConfirm(false)}
+                className="px-2.5 py-1.5 bg-bg-side text-text-main border border-border-main rounded-lg text-[10px] font-bold uppercase hover:bg-bg-main transition-all cursor-pointer"
+              >
+                Batal
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-7 gap-2 bg-bg-card p-4 rounded-3xl border border-border-main shadow-sm translate-z-0">
@@ -1713,6 +1732,17 @@ export default function App() {
             <p className="text-[9px] leading-relaxed italic text-slate-500 font-serif opacity-80 uppercase tracking-tighter">
               Uyunul Masa-il Linnisa & Panduan Tamyiz Terpadu
             </p>
+            
+            {/* PWA offline tip */}
+            <div className="mt-4 pt-4 border-t border-border-main/50">
+              <div className="flex items-center gap-1.5 text-[9px] text-teal-400 uppercase font-mono tracking-wider mb-1 font-bold">
+                <Sparkles size={11} className="text-teal-400" />
+                <span>PWA Offline Aktif</span>
+              </div>
+              <p className="text-[9px] text-slate-400 leading-normal">
+                Dapat diinstal di Layar Utama HP / Desktop Anda dan digunakan 100% tanpa internet (Offline).
+              </p>
+            </div>
           </div>
         </div>
 

@@ -144,6 +144,9 @@ function generateActionableNotes(
         notes.push("Darah berhenti SEBELUM mencapai batas minimal haidl (24 jam). Anda CUKUP membersihkan darah (istinja) dan berwudlu jika ingin sholat. Belum diwajibkan mandi besar.");
       } else {
         notes.push("Darah telah mencapai minimal haid (24 jam) dan saat ini berhenti. Anda WAJIB segera mandi besar (mandi janabah) dan melaksanakan rutinitas ibadah.");
+        if (hasGapInBetween) {
+          notes.push("Kebolehan Pasutri: Selama darah berhenti di sela-sela masa haid, suami diperbolehkan menggauli istrinya menurut riwayat yang kuat karena secara zahir darah yang berhenti dihukumi suci.");
+        }
       }
     } else {
       // Nifas: Batas minimal sekejap (lahdzoh)
@@ -156,7 +159,6 @@ function generateActionableNotes(
       notes.push(`Darah ${context} keluar kembali. Anda wajib kembali menghindari hal-hal yang diharamkan bagi wanita ${context} (Sholat, Puasa, Jima', dll).`);
       if (bloodHours >= 24 || context === 'nifas') {
         notes.push("Karena total darah sudah mencapai batas minimal, maka setiap kali darah berhenti di masa mendatang (dengan memastikan tampon tidak lagi bernoda) selama masih dalam rentang masa maksimal, Anda wajib mandi besar lagi, sholat, dan puasa.");
-        notes.push("Kebolehan Pasutri: Selama darah berhenti di sela-sela masa haid, suami diperbolehkan menggauli istrinya menurut riwayat yang kuat karena secara zahir darah yang berhenti dihukumi suci.");
       }
     } else {
       notes.push(`Darah ${context} baru saja tiba. Hindari hal-hal yang diharamkan (haram bi sababil haidl). Pastikan peralatan ibadah tidak terkena najis darah.`);
@@ -205,36 +207,71 @@ export function determineStatus(
   const legalBasis = "Kitab Uyunul Masa-il Linnisa (Mazhab Syafi'i) & Fathul Qorib.";
 
   const bloodDayIndices = days.map((d, i) => d.isBlood ? i : -1).filter(i => i !== -1);
-  const isTerputus = bloodDayIndices.length > 1 && (bloodDayIndices[bloodDayIndices.length - 1] - bloodDayIndices[0] + 1) > bloodDayIndices.length;
+  const firstBloodIdx = bloodDayIndices.length > 0 ? bloodDayIndices[0] : -1;
+  const lastBloodIdx = bloodDayIndices.length > 0 ? bloodDayIndices[bloodDayIndices.length - 1] : -1;
+  const bleedingSpan = bloodDayIndices.length > 0 ? (lastBloodIdx - firstBloodIdx + 1) : 0;
+  const isTerputus = bloodDayIndices.length > 1 && bleedingSpan > bloodDayIndices.length;
 
-  // KASUS NORMAL (Rentang <= 15 hari)
-  if (totalSpan <= maxDays) {
+  // KASUS NORMAL (Rentang pendarahan <= 15 hari)
+  if (bleedingSpan <= maxDays) {
     if (bloodHours >= 24) {
       category = context === 'haid' ? "Haidl Normal" : "Nifas Normal";
       
-      days.forEach(d => {
-        statusTimeline.push({
-          day: d.dayNumber,
-          date: d.date,
-          status: context === 'haid' ? 'Haid' : 'Nifas',
-          isBlood: d.isBlood,
-          reason: d.isBlood 
-            ? `Darah keluar (${context === 'haid' ? 'Haid' : 'Nifas'}).` 
-            : `Masa henti/jeda di antaranya ditarik menjadi masa ${context === 'haid' ? 'Haid' : 'Nifas'} (Kaidah Jam'u).`
-        });
+      days.forEach((d, idx) => {
+        if (idx < firstBloodIdx) {
+          statusTimeline.push({
+            day: d.dayNumber,
+            date: d.date,
+            status: 'Suci',
+            isBlood: false,
+            reason: "Masa suci sebelum mulainya pendarahan."
+          });
+        } else if (idx > lastBloodIdx) {
+          statusTimeline.push({
+            day: d.dayNumber,
+            date: d.date,
+            status: 'Suci',
+            isBlood: false,
+            reason: "Masa suci setelah pendarahan berakhir secara keseluruhan."
+          });
+        } else {
+          statusTimeline.push({
+            day: d.dayNumber,
+            date: d.date,
+            status: context === 'haid' ? 'Haid' : 'Nifas',
+            isBlood: d.isBlood,
+            reason: d.isBlood 
+              ? `Darah keluar (${context === 'haid' ? 'Haid' : 'Nifas'}).` 
+              : `Masa henti/jeda di antaranya ditarik menjadi masa ${context === 'haid' ? 'Haid' : 'Nifas'} (Kaidah Jam'u/Talfiq).`
+          });
+        }
       });
     } else {
       category = "Darah Fasad (Bukan Haidl)";
       analysis = "Akumulasi darah kurang dari 24 jam dalam rentang 15 hari, sehingga tidak memenuhi syarat minimal haidl.";
       days.forEach(d => {
-        statusTimeline.push({
-          day: d.dayNumber, date: d.date, status: 'Istihadloh', isBlood: d.isBlood, reason: "Kurang dari 24 jam."
-        });
-        if (d.isBlood) qadhoObligations.push(`Sholat hari ke-${d.dayNumber} wajib diqodho.`);
+        if (d.isBlood) {
+          statusTimeline.push({
+            day: d.dayNumber, 
+            date: d.date, 
+            status: 'Istihadloh', 
+            isBlood: true, 
+            reason: "Darah Fasad (akumulasi kurang dari 24 jam)."
+          });
+          qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodho (Kasus Darah Istihadloh/Fasad).`);
+        } else {
+          statusTimeline.push({
+            day: d.dayNumber, 
+            date: d.date, 
+            status: 'Suci', 
+            isBlood: false, 
+            reason: "Masa suci."
+          });
+        }
       });
     }
   } 
-  // KASUS ISTIHADLOH (Rentang > 15 hari)
+  // KASUS ISTIHADLOH (Rentang pendarahan > 15 hari)
   else {
     const strongDays = days.filter(d => d.isStrong);
     const totalStrongHours = strongDays.length * 24;
@@ -243,72 +280,158 @@ export function determineStatus(
     if (experience === 'mubtadiah') {
       if (isMumayyizah) {
         category = "Mubtadi'ah Mumayyizah";
-               // Cari index darah kuat pertama dan terakhir
         const firstStrongIdx = days.findIndex(d => d.isStrong);
         const lastStrongIdx = days.map(d => d.isStrong).lastIndexOf(true);
 
         days.forEach((d, idx) => {
-          const isHaid = idx >= firstStrongIdx && idx <= lastStrongIdx;
-          statusTimeline.push({
-            day: d.dayNumber, date: d.date, status: isHaid ? 'Haid' : 'Istihadloh',
-            isBlood: d.isBlood,
-            reason: isHaid 
-              ? (d.isStrong ? "Darah Kuat (Haid)." : "Darah Lemah/Henti di sela-sela darah kuat (Haid menurut Kaidah Tamyiz Intermittent).") 
-              : "Istihadloh (Setelah darah kuat terakhir)."
-          });
-          if (!isHaid && d.isBlood) qadhoObligations.push(`Sholat hari ke-${d.dayNumber} wajib diqodho.`);
+          if (idx < firstStrongIdx) {
+            statusTimeline.push({
+              day: d.dayNumber,
+              date: d.date,
+              status: d.isBlood ? 'Istihadloh' : 'Suci',
+              isBlood: d.isBlood,
+              reason: d.isBlood ? "Darah Lemah (Istihadloh sebelum darah kuat dimulai)." : "Masa suci."
+            });
+            if (d.isBlood) qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodho (Kasus Darah Istihadloh).`);
+          } else if (idx > lastStrongIdx) {
+            statusTimeline.push({
+              day: d.dayNumber,
+              date: d.date,
+              status: d.isBlood ? 'Istihadloh' : 'Suci',
+              isBlood: d.isBlood,
+              reason: d.isBlood ? "Darah Lemah (Istihadloh setelah darah kuat berakhir)." : "Masa suci setelah haid selesai."
+            });
+            if (d.isBlood) qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodho (Kasus Darah Istihadloh).`);
+          } else {
+            statusTimeline.push({
+              day: d.dayNumber,
+              date: d.date,
+              status: 'Haid',
+              isBlood: d.isBlood,
+              reason: d.isStrong 
+                ? "Darah Kuat (Haid)." 
+                : "Darah Lemah/Henti di sela-sela darah kuat (Haid menurut Kaidah Tamyiz Intermittent)."
+            });
+          }
         });
       } else {
         category = "Mubtadi'ah Ghoiru Mumayyizah";
         days.forEach(d => {
           const isHaid = d.dayNumber === 1;
           statusTimeline.push({
-            day: d.dayNumber, date: d.date, status: isHaid ? 'Haid' : 'Istihadloh',
+            day: d.dayNumber, 
+            date: d.date, 
+            status: isHaid ? 'Haid' : (d.isBlood ? 'Istihadloh' : 'Suci'),
             isBlood: d.isBlood,
-            reason: isHaid ? "Ketentuan minimal haid." : "Istihadloh (melampaui 15 hari)."
+            reason: isHaid ? "Ketentuan haid minimal (24 jam pertama)." : (d.isBlood ? "Istihadloh (melampaui batas maksimal haid)." : "Masa suci.")
           });
-          if (!isHaid && d.isBlood) qadhoObligations.push(`Sholat hari ke-${d.dayNumber} wajib diqodho.`);
+          if (!isHaid && d.isBlood) qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodho (Kasus Darah Istihadloh).`);
         });
       }
     } else {
       // MU'TADAH
       if (isMumayyizah) {
         category = "Mu'tadah Mumayyizah";
-        
         const firstStrongIdx = days.findIndex(d => d.isStrong);
         const lastStrongIdx = days.map(d => d.isStrong).lastIndexOf(true);
 
         days.forEach((d, idx) => {
-          const isHaid = idx >= firstStrongIdx && idx <= lastStrongIdx;
-          statusTimeline.push({
-            day: d.dayNumber, date: d.date, status: isHaid ? 'Haid' : 'Istihadloh',
-            isBlood: d.isBlood,
-            reason: isHaid 
-              ? (d.isStrong ? "Darah Kuat (Haid)." : "Darah Lemah/Henti di sela-sela darah kuat (Haid menurut Kaidah Tamyiz Intermittent).") 
-              : "Istihadloh (Darah Lemah)."
-          });
-          if (!isHaid && d.isBlood) qadhoObligations.push(`Sholat hari ke-${d.dayNumber} wajib diqodho.`);
+          if (idx < firstStrongIdx) {
+            statusTimeline.push({
+              day: d.dayNumber,
+              date: d.date,
+              status: d.isBlood ? 'Istihadloh' : 'Suci',
+              isBlood: d.isBlood,
+              reason: d.isBlood ? "Darah Lemah (Istihadloh sebelum darah kuat dimulai)." : "Masa suci."
+            });
+            if (d.isBlood) qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodho (Kasus Darah Istihadloh).`);
+          } else if (idx > lastStrongIdx) {
+            statusTimeline.push({
+              day: d.dayNumber,
+              date: d.date,
+              status: d.isBlood ? 'Istihadloh' : 'Suci',
+              isBlood: d.isBlood,
+              reason: d.isBlood ? "Darah Lemah (Istihadloh setelah darah kuat berakhir)." : "Masa suci setelah haid selesai."
+            });
+            if (d.isBlood) qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodho (Kasus Darah Istihadloh).`);
+          } else {
+            statusTimeline.push({
+              day: d.dayNumber,
+              date: d.date,
+              status: 'Haid',
+              isBlood: d.isBlood,
+              reason: d.isStrong 
+                ? "Darah Kuat (Haid)." 
+                : "Darah Lemah/Henti di sela-sela darah kuat (Haid menurut Kaidah Tamyiz Intermittent)."
+            });
+          }
         });
       } else if (habit.retrospection === 'ingat_semua' || habit.retrospection === 'ingat_durasi') {
         const dur = habit.duration || 7;
         category = "Mu'tadah Ghoiru Mumayyizah Dzakiroh";
-        days.forEach(d => {
-          const isHaid = d.dayNumber <= dur;
+        days.forEach((d, idx) => {
+          const isHaidZone = d.dayNumber <= dur;
+          
+          let status = 'Suci';
+          let reason = 'Masa suci.';
+          
+          if (isHaidZone) {
+            if (d.isBlood) {
+              status = 'Haid';
+              reason = `Haid sesuai Adat (${dur} hari).`;
+            } else {
+              // Check if flanked by blood within the Haid zone on both left and right
+              let leftHasHaidBlood = false;
+              for (let l = idx - 1; l >= 0; l--) {
+                if (days[l].dayNumber <= dur && days[l].isBlood) {
+                  leftHasHaidBlood = true;
+                  break;
+                }
+              }
+              
+              let rightHasHaidBlood = false;
+              for (let r = idx + 1; r < days.length; r++) {
+                if (days[r].dayNumber <= dur && days[r].isBlood) {
+                  rightHasHaidBlood = true;
+                  break;
+                }
+              }
+              
+              if (leftHasHaidBlood && rightHasHaidBlood) {
+                status = 'Haid';
+                reason = `Masa henti di sela haid adat (Hukum Jam'u).`;
+              } else {
+                status = 'Suci';
+                reason = `Masa suci (Hukum Jam'u tidak berlaku karena tidak diapit Haid di kedua sisi).`;
+              }
+            }
+          } else {
+            status = d.isBlood ? 'Istihadloh' : 'Suci';
+            reason = d.isBlood ? "Istihadloh (melampaui adat haid)." : "Masa suci.";
+          }
+          
           statusTimeline.push({
-            day: d.dayNumber, date: d.date, status: isHaid ? 'Haid' : 'Istihadloh',
+            day: d.dayNumber,
+            date: d.date,
+            status,
             isBlood: d.isBlood,
-            reason: isHaid ? `Masa Adat (${dur} hari).` : "Istihadloh (melebihi adat)."
+            reason
           });
-          if (!isHaid && d.isBlood) qadhoObligations.push(`Sholat hari ke-${d.dayNumber} wajib diqodho.`);
+          const isHaid = status === 'Haid';
+          if (!isHaid && d.isBlood) qadhoObligations.push(`Sholat hari ke-${d.dayNumber}: Wajib diqodho (Kasus Darah Istihadloh).`);
         });
       } else {
         category = "Mutahayyiroh (Lupa Adat)";
         days.forEach(d => {
           statusTimeline.push({
-            day: d.dayNumber, date: d.date, status: 'Ihtiyath', isBlood: d.isBlood, reason: "Mutahayyiroh."
+            day: d.dayNumber, 
+            date: d.date, 
+            status: 'Ihtiyath', 
+            isBlood: d.isBlood, 
+            reason: d.isBlood ? "Masa kehati-hatian (Mutahayyiroh - darah keluar)." : "Masa kehati-hatian (Mutahayyiroh - darah berhenti)."
           });
         });
-        purificationInstructions.push("Wajib mandi wajib setiap akan sholat fardlu.");
+        purificationInstructions.push("Wajib mandi wajib setiap akan sholat fardlu khusunya saat bersuci.");
       }
     }
   }

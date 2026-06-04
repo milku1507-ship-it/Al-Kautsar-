@@ -1,9 +1,42 @@
 <!doctype html>
-<html lang="en">
+<html lang="id">
   <head>
+    <script>
+      // Suppress benign Vite preview sandbox WebSocket connection rejection events
+      window.addEventListener('unhandledrejection', function (event) {
+        if (event.reason && (
+          event.reason.message?.includes('WebSocket') || 
+          event.reason.message?.includes('vite') ||
+          String(event.reason).includes('WebSocket') ||
+          String(event.reason).includes('vite')
+        )) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }, true);
+      window.addEventListener('error', function (event) {
+        if (event.message && (
+          event.message.includes('WebSocket') || 
+          event.message.includes('vite')
+        )) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }, true);
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Google AI Studio App</title>
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Fiqh Darah" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="manifest" href="/manifest.json" />
+    <title>Kalkulator Fiqh Darah</title>
   </head>
   <body>
     <div id="root"></div>
