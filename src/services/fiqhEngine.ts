@@ -126,10 +126,10 @@ function generateActionableNotes(
   const maxDays = context === 'haid' ? 15 : 60;
   const notes: string[] = [];
 
-  // 1. KASUS ISTIHADLOH (Melebihi batas maksimal)
+  // 1. KASUS ISTIHADLAH (Melebihi batas maksimal)
   if (totalSpan > maxDays) {
-    notes.push("PANDUAN MUSTAHADLOH: Karena masa darah telah melewati batas maksimal (15 hari haidl / 60 hari nifas), Anda saat ini berstatus Mustahadloh.");
-    notes.push("Instruksi Bersuci: Wajib berwudhu istibahah (untuk memperbolehkan sholat) setiap kali masuk waktu sholat fardlu, setelah membersihkan farji dan menyumbatnya dengan pembalut yang rapat.");
+    notes.push("PANDUAN MUSTAHADLAH: Karena masa darah telah melewati batas maksimal (15 hari haid / 60 hari nifas), Anda saat ini berstatus Mustahadlah.");
+    notes.push("Instruksi Bersuci: Wajib berwudhu istibahah (untuk memperbolehkan shalat) setiap kali masuk waktu shalat fardhu, setelah membersihkan farji (organ intim) dan menyumbatnya dengan pembalut yang rapat.");
     return notes;
   }
 
@@ -431,7 +431,7 @@ export function determineStatus(
             reason: d.isBlood ? "Masa kehati-hatian (Mutahayyiroh - darah keluar)." : "Masa kehati-hatian (Mutahayyiroh - darah berhenti)."
           });
         });
-        purificationInstructions.push("Wajib mandi wajib setiap akan sholat fardlu khusunya saat bersuci.");
+        purificationInstructions.push("Wajib mandi wajib setiap akan shalat fardhu, khususnya saat bersuci.");
       }
     }
   }
@@ -466,10 +466,10 @@ export function determineStatus(
     "Nifas Normal": isTerputus
       ? "Pendarahan pasca-melahirkan Anda keluar dalam rentang waktu yang wajar (tidak melebihi batas maksimal nifas 60 hari) dan dipisahkan dengan masa suci/jeda di antaranya, sehingga seluruh hari pendarahan dan masa jeda di antaranya dihukumi sebagai darah nifas berdasarkan kaidah Jam'u/Talfiq."
       : "Pendarahan pasca-melahirkan Anda keluar dalam rentang waktu yang wajar (tidak melebihi batas maksimal nifas 60 hari) secara terus-menerus tanpa terputus, sehingga seluruh pendarahan dihukumi sebagai darah nifas.",
-    "Mubtadi'ah Mumayyizah": "Darah Anda memiliki perbedaan kualitas (kuat/lemah) yang memenuhi syarat Tamyiz, sehingga darah yang kuat dihukumi haid dan yang lemah dihukumi istihadloh.",
-    "Mubtadi'ah Ghoiru Mumayyizah": "Darah tidak memiliki perbedaan kualitas yang memenuhi syarat Tamyiz, maka berdasarkan kaidah Mubtadi'ah Ghoiru Mumayyizah, hari pertama dihukumi haid dan sisanya istihadloh.",
-    "Mu'tadah Mumayyizah": "Darah Anda memiliki perbedaan kualitas (kuat/lemah) yang memenuhi syarat Tamyiz, sehingga darah yang kuat dihukumi haid dan yang lemah dihukumi istihadloh.",
-    "Mu'tadah Ghoiru Mumayyizah Dzakiroh": "Anda ingat durasi adat haid Anda sebelumnya, maka masa haid ditetapkan berdasarkan durasi adat tersebut, sisanya dihukumi istihadloh.",
+    "Mubtadi'ah Mumayyizah": "Darah Anda memiliki perbedaan kualitas (kuat/lemah) yang memenuhi syarat Tamyiz, sehingga darah yang kuat dihukumi haid dan yang lemah dihukumi istihadlah.",
+    "Mubtadi'ah Ghoiru Mumayyizah": "Darah tidak memiliki perbedaan kualitas yang memenuhi syarat Tamyiz, maka berdasarkan kaidah Mubtadi'ah Ghoiru Mumayyizah, hari pertama dihukumi haid dan sisanya istihadlah.",
+    "Mu'tadah Mumayyizah": "Darah Anda memiliki perbedaan kualitas (kuat/lemah) yang memenuhi syarat Tamyiz, sehingga darah yang kuat dihukumi haid dan yang lemah dihukumi istihadlah.",
+    "Mu'tadah Ghoiru Mumayyizah Dzakiroh": "Anda ingat durasi adat haid Anda sebelumnya, maka masa haid ditetapkan berdasarkan durasi adat tersebut, sisanya dihukumi istihadlah.",
     "Mutahayyiroh (Lupa Adat)": "Karena Anda lupa durasi maupun waktu adat haid, maka hukumnya adalah Mutahayyiroh: wajib bersikap ihtiyath (berhati-hati) dengan menanggung konsekuensi ibadah maksimal."
   };
 

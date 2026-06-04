@@ -90,11 +90,11 @@ function buildFiqhAnalysisSummary(
     const parts = [];
     if (haidCount > 0) parts.push(`${haidCount} hari dihukumi HAIDL`);
     if (nifasCount > 0) parts.push(`${nifasCount} hari dihukumi NIFAS`);
-    if (istihadlohCount > 0) parts.push(`${istihadlohCount} hari dihukumi ISTIHADLOH`);
+    if (istihadlohCount > 0) parts.push(`${istihadlohCount} hari dihukumi ISTIHADLAH`);
     if (ihtiyathCount > 0) parts.push(`${ihtiyathCount} hari dihukumi IHTIYATH`);
     
     if (parts.length === 0) {
-        summary = `Total rangkaian Anda adalah ${statusTimeline.length} hari. Berdasarkan kaidah ${category}, masa tersebut dihukumi SUCI/ISTIHADLOH.`;
+        summary = `Total rangkaian Anda adalah ${statusTimeline.length} hari. Berdasarkan kaidah ${category}, masa tersebut dihukumi SUCI/ISTIHADLAH.`;
     } else {
         summary += parts.join(', ') + ". ";
     }
@@ -717,7 +717,7 @@ function evaluateIstihadlohNifas(
         });
         
         specialNotes.push("Hukum Nasiyah Nifas (Mutahayyiroh): Anda lupa adat nifas. Hari pertama (setetes) yakin nifas.");
-        specialNotes.push("Instruksi Mandi: Wajib mandi besar (mandi janabah) setiap akan melaksanakan sholat fardlu selama masa istihadloh ini.");
+        specialNotes.push("Instruksi Mandi: Wajib mandi besar (mandi janabah) setiap akan melaksanakan shalat fardhu selama masa istihadlah ini.");
     } else if (hasNifasHabit && habit.retrospection === 'ingat_durasi') {
         // N6: Ingat Durasi, Lupa Waktu Mulai (Qodron la Waqtan)
         category = "Mu'tadah Ghoiru Mumayyizah finnifas Qodron la Waqtan";
@@ -774,7 +774,7 @@ function evaluateIstihadlohNifas(
         });
 
         specialNotes.push("Kondisi: Ingat waktu mulai (hari ke-1), tapi lupa durasinya.");
-        specialNotes.push("Instruksi Mandi: Wajib mandi besar (mandi janabah) SETIAP AKAN sholat fardlu mulai hari ke-2 s.d ke-60.");
+        specialNotes.push("Instruksi Mandi: Wajib mandi besar (mandi janabah) SETIAP AKAN melaksanakan shalat fardhu mulai hari ke-2 s.d ke-60.");
     } else {
         // Ghoiru Mumayyizah finnifas (Mubtadi'ah (N2) or Dzakiroh (N4))
         category = hasNifasHabit ? "Mu'tadah Ghoiru Mumayyizah finnifas Dzakiroh" : "Mubtadi'ah Ghoiru Mumayyizah finnifas";
@@ -853,7 +853,7 @@ function evaluateIstihadlohNifas(
     
     const purifications = ["Mandi wajib di akhir masa Nifas dan setiap akhir masa haid."];
     if (statusTimeline.some(s => s.status === 'Ihtiyath')) {
-        purifications.push("Wajib mandi janabah setiap kali akan melaksanakan sholat fardlu (Ihtiyath).");
+        purifications.push("Wajib mandi janabah setiap kali akan melaksanakan shalat fardhu (Ihtiyath).");
     }
 
     return buildFinalNifasResult(
@@ -1118,9 +1118,9 @@ function evaluateMubtadiahMumayyizah(days: DayStrength[], isFirstMonth: boolean,
     // 1. Kondisi 1 & 2: Bulan Pertama
     if (isFirstMonth) {
         if (context === 'haid') {
-            langkahSelanjutnyaTeks = "Masa Penantian 15 Hari telah berakhir. Mulai hari ini, Anda WAJIB MANDI BESAR (Janabah) dan status Anda resmi menjadi wanita Mustahadloh (Suci). Anda WAJIB melaksanakan sholat fardlu dan puasa tepat waktu (dengan tata cara bersuci khusus Mustahadloh). Jika ibadah di hari-hari ini terlanjur Anda tinggalkan, maka wajib diqodlo.";
+            langkahSelanjutnyaTeks = "Masa Penantian 15 Hari telah berakhir. Mulai hari ini, Anda WAJIB MANDI BESAR (Janabah) dan status Anda resmi menjadi wanita Mustahadlah (Suci). Anda WAJIB melaksanakan shalat fardhu dan puasa tepat waktu (dengan tata cara bersuci khusus Mustahadlah). Jika ibadah di hari-hari ini terlanjur Anda tinggalkan, maka wajib diqadha.";
         } else if (context === 'nifas') {
-            langkahSelanjutnyaTeks = "Masa Penantian 60 Hari telah berakhir. Mulai hari ini, Anda WAJIB MANDI BESAR (Janabah) dan status Anda resmi menjadi wanita Mustahadloh (Suci). Anda WAJIB melaksanakan sholat fardlu dan puasa tepat waktu (dengan tata cara bersuci khusus Mustahadloh). Jika ibadah di hari-hari ini terlanjur Anda tinggalkan, maka wajib diqodlo.";
+            langkahSelanjutnyaTeks = "Masa Penantian 60 Hari telah berakhir. Mulai hari ini, Anda WAJIB MANDI BESAR (Janabah) dan status Anda resmi menjadi wanita Mustahadlah (Suci). Anda WAJIB melaksanakan shalat fardhu dan puasa tepat waktu (dengan tata cara bersuci khusus Mustahadlah). Jika ibadah di hari-hari ini terlanjur Anda tinggalkan, maka wajib diqadha.";
         }
     } 
     // 2. Kondisi 3: Tamyiz
@@ -1225,7 +1225,7 @@ export function evaluateMutadahMumayyizah(days: DayStrength[], habit: UserHabit,
     let analysis = "";
 
     if (isFirstMonth) {
-        specialNotes.push("Catatan Bulan Pertama: Karena ini adalah bulan pertama terjadinya pendarahan panjang melebihi adat, Anda wajib menanti hingga genap 15 hari (batas maksimal haid) untuk melihat apakah darah berhenti atau berlanjut, guna memastikan status istihadoh Anda. Selama masa tunggu 15 hari ini, Anda dilarang beribadah (shalat, puasa, dll) karena secara zhohir masih dihukumi haid. Setelah melewati hari ke-15 dan darah terbukti melampaui batas maksimal haid, Anda wajib mandi besar, kembali beribadah, dan mengqodlo shalat fardhu pada hari-hari istihadloh yang Anda tinggalkan selama masa tunggu tersebut.");
+        specialNotes.push("Catatan Bulan Pertama: Karena ini adalah bulan pertama terjadinya pendarahan panjang melebihi adat, Anda wajib menanti hingga genap 15 hari (batas maksimal haid) untuk melihat apakah darah berhenti atau berlanjut, guna memastikan status istihadlah Anda. Selama masa tunggu 15 hari ini, Anda dilarang beribadah (shalat, puasa, dll) karena secara zhohir masih dihukumi haid. Setelah melewati hari ke-15 dan darah terbukti melampaui batas maksimal haid, Anda wajib mandi besar, kembali beribadah, dan mengqadha shalat fardhu pada hari-hari istihadlah yang Anda tinggalkan selama masa tunggu tersebut.");
     }
 
     // Cek apakah lemah di awal
@@ -1425,7 +1425,7 @@ export function evaluateMutadahGhoiruMumayyizahDzakiroh(days: DayStrength[], hab
     let purificationInstructions: string[] = [];
 
     if (isFirstMonth) {
-        specialNotes.push("Catatan Bulan Pertama: Karena ini adalah bulan pertama terjadinya pendarahan panjang melebihi adat, Anda wajib menanti hingga genap 15 hari (batas maksimal haid) untuk melihat apakah darah berhenti atau berlanjut, guna memastikan status istihadoh Anda. Selama masa tunggu 15 hari ini, Anda dilarang beribadah (shalat, puasa, dll) karena secara zhohir masih dihukumi haid. Setelah melewati hari ke-15 dan darah terbukti melampaui batas maksimal haid, Anda wajib mandi besar, kembali beribadah, dan mengqodlo shalat fardhu pada hari-hari istihadloh yang Anda tinggalkan selama masa tunggu tersebut.");
+        specialNotes.push("Catatan Bulan Pertama: Karena ini adalah bulan pertama terjadinya pendarahan panjang melebihi adat, Anda wajib menanti hingga genap 15 hari (batas maksimal haid) untuk melihat apakah darah berhenti or berlanjut, guna memastikan status istihadlah Anda. Selama masa tunggu 15 hari ini, Anda dilarang beribadah (shalat, puasa, dll) karena secara zhohir masih dihukumi haid. Setelah melewati hari ke-15 dan darah terbukti melampaui batas maksimal haid, Anda wajib mandi besar, kembali beribadah, dan mengqadha shalat fardhu pada hari-hari istihadlah yang Anda tinggalkan selama masa tunggu tersebut.");
     }
 
     // Kita gunakan calculationMonthIndex untuk penentuan pola (misal pola: 3, 5, 7)
@@ -1745,13 +1745,13 @@ export function evaluateMutahayyiroh(days: DayStrength[], habit: UserHabit, isRa
 
     const purificationInstructions = [
         habit.ingatWaktuBerhenti 
-          ? "Cara bersuci (Mandi Khusus): Karena Anda hanya ingat waktu berhentinya saja, Anda wajib mandi besar setiap hari tepat pada waktu tersebut (misal jam berhenti yang Anda ingat), lalu cukup berwudlu untuk fardlu berikutnya."
-          : "Cara bersuci (Wajib Mandi Setiap Sholat Fardlu): Karena Anda sama sekali tidak ingat waktu berhentinya haid, Anda WAJIB MANDI BESAR setiap kali hendak menunaikan shalat fardhu (setiap masuk waktu shalat).",
+          ? "Cara bersuci (Mandi Khusus): Karena Anda hanya ingat waktu berhentinya saja, Anda wajib mandi besar setiap hari tepat pada waktu tersebut (misal jam berhenti yang Anda ingat), lalu cukup berwudhu untuk fardhu berikutnya."
+          : "Cara bersuci (Wajib Mandi Setiap Shalat Fardhu): Karena Anda sama sekali tidak ingat waktu berhentinya haid, Anda WAJIB MANDI BESAR setiap kali hendak menunaikan shalat fardhu (setiap masuk waktu shalat).",
         "Langkah-langkah bersuci untuk setiap shalat fardhu:",
         "1. Tunggu hingga waktu shalat fardhu benar-benar masuk.",
         "2. Bersihkan kemaluan dari darah dan kotoran (istinja').",
         "3. Segera sumbat dengan kapas pembalut jika darah masih mengalir dan gunakan pembalut yang rapat (jika sedang berpuasa di siang hari, cukup dibalut luarnya saja tanpa menyumbat bagian dalam).",
-        "4. Lakukan mandi besar (Ghusl) dengan niat bersuci dari haid agar diperbolehkan melaksanakan shalat fardhu (Niat: 'Sengaja saya mandi fardhu karena istihadloh untuk kebolehan shalat fardhu' / 'نويت الغسل لاستباحة الصلاة الفرض').",
+        "4. Lakukan mandi besar (Ghusl) dengan niat bersuci dari haid agar diperbolehkan melaksanakan shalat fardhu (Niat: 'Sengaja saya mandi fardhu karena istihadlah untuk kebolehan shalat fardhu' / 'نويت الغسل لاستباحة الصلاة الفرض').",
         "5. Lakukan wudhu dengan segera setelah mandi.",
         "6. Segera dirikan shalat fardhu tanpa menunda-nunda."
     ];
@@ -1859,7 +1859,7 @@ export function evaluateMutadahIngatWaktuLupaDurasi(days: DayStrength[], isFirst
     "1. Ketahuilah dengan yakin bahwa waktu shalat fardhu tersebut sudah benar-benar masuk.",
     "2. Bersihkan kemaluan dari darah dan kotoran (istinja').",
     "3. Sumpat dengan kapas pembalut jika darah masih mengalir dan gunakan pembalut yang rapat (jika sedang berpuasa di siang hari, cukup dibalut luarnya saja tanpa menyumbat bagian dalam untuk mencegah pembatalan puasa akibat masuknya benda ke dalam rongga tubuh).",
-    "4. Segera lakukan mandi besar (Ghusl) dengan niat memperbolehkan shalat fardhu (Niat: 'Sengaja saya mandi fardhu karena istihadloh untuk kebolehan shalat fardhu' / 'نويت الغسل لاستباحة الفرض').",
+    "4. Segera lakukan mandi besar (Ghusl) dengan niat memperbolehkan shalat fardhu (Niat: 'Sengaja saya mandi fardhu karena istihadlah untuk kebolehan shalat fardhu' / 'نويت الغسل لاستباحة الفرض').",
     "5. Segera lakukan wudhu setelah mandi tanpa jeda lama.",
     "6. Segera laksanakan shalat fardhu tanpa menunda-nunda.",
     "Catatan penting setelah Hari ke-15 (Hari ke-16 dst): Anda tidak perlu lagi mandi besar setiap hendak shalat fardhu. Cukup lakukan istinja', balut dengan pembalut bersih, lalu berwudhu setiap kali masuk waktu shalat fardhu baru."
@@ -2035,12 +2035,12 @@ export function evaluateMutadahIngatDurasiLupaWaktu(days: DayStrength[], habit: 
     "1. Pastikan waktu shalat fardhu tersebut sudah masuk.",
     "2. Bersihkan kemaluan dari darah dan kotoran (istinja').",
     "3. Sumpat kemaluan dengan kapas/pembalut yang bersih dan rapat (kecuali sedang berpuasa di siang hari, cukup balut di luarnya saja).",
-    "4. Segera lakukan mandi besar (Ghusl) dengan niat untuk memperbolehkan shalat fardhu (Niat: 'Sengaja saya mandi fardhu karena istihadloh untuk kebolehan shalat fardhu' / 'نويت الغسل لاستباحة الفرض').",
+    "4. Segera lakukan mandi besar (Ghusl) dengan niat untuk memperbolehkan shalat fardhu (Niat: 'Sengaja saya mandi fardhu karena istihadlah untuk kebolehan shalat fardhu' / 'نويت الغسل لاستباحة الفرض').",
     "5. Segera lakukan wudhu setelah mandi tanpa jeda lama.",
     "6. Segera laksanakan shalat fardhu tanpa menunda-nunda."
   );
 
-  let shortCategory = "ISTIHADLOH (MU'TADAH GHOIRU MUMAYYIZAH DZAKIROH LI'ADATIHA QODRON LA WAQTAN)";
+  let shortCategory = "ISTIHADLAH (MU'TADAH GHOIRU MUMAYYIZAH DZAKIROH LI'ADATIHA QODRON LA WAQTAN)";
   const baseSummary = buildFiqhAnalysisSummary(category, statusTimeline, days);
   analysis = `${analysis} ${baseSummary}`;
 
@@ -2329,7 +2329,7 @@ function getCategoryReason(shortCategory: string, category: string, hasGaps: boo
   // Mutahayyiroh / Nasiyah
   if (sc.includes("MUTAHAYYIROH") || sc.includes("NASIYAH") || cat.includes("MUTAHAYYIROH") || cat.includes("NASIYAH")) {
     if (sc.includes("FINNIFAS") || cat.includes("FINNIFAS") || cat.includes("NIFAS")) {
-      return "Pendarahan pasca-persalinan Anda melebihi batas maksimal nifas (60 hari). Karena darah Anda tidak bisa dibedakan (Ghoiru Mumayyizah) dan Anda lupa total durasi serta waktu adat nifas lama Anda (Nasiyah / Mutahayyiroh), maka diterapkan hukum Ihtiyath (kehati-hatian) di mana Anda wajib mandi besar untuk setiap sholat fardlu setelah lewat 60 hari.";
+      return "Pendarahan pasca-persalinan Anda melebihi batas maksimal nifas (60 hari). Karena darah Anda tidak bisa dibedakan (Ghoiru Mumayyizah) dan Anda lupa total durasi serta waktu adat nifas lama Anda (Nasiyah / Mutahayyiroh), maka diterapkan hukum Ihtiyath (kehati-hatian) di mana Anda wajib mandi besar untuk setiap shalat fardhu setelah lewat 60 hari.";
     }
     return "Pendarahan Anda melebihi batas maksimal haid (15 hari). Karena karakter darah tidak dapat dibedakan (Ghoiru Mumayyizah) serta Anda benar-benar lupa durasi (qodr) dan waktu mulai (waqt) adat haid Anda yang lalu, maka Anda termasuk golongan Mutahayyiroh (bingung). Hukum fiqh menetapkan perlunya beribadah dengan penuh kehati-hatian (Ihtiyath).";
   }

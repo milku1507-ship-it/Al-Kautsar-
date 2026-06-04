@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Routes, Route, Link, useLocation } from 'react-router-dom';
+import { Routes, Route, Link, useLocation, useSearchParams, useNavigate } from 'react-router-dom';
 import Header from './components/Header';
 import ArticleList from './components/articles/ArticleList';
 import ArticleDetail from './components/articles/ArticleDetail';
@@ -27,7 +27,9 @@ import {
   Trash2,
   Sun,
   Moon,
-  Sparkles
+  Sparkles,
+  Compass,
+  ShieldCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -66,6 +68,8 @@ import { calculateHijriAge } from './lib/hijriUtils';
 
 export default function App() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<FiqhAnalysisResult | null>(null);
@@ -78,8 +82,8 @@ export default function App() {
   const [ageYears, setAgeYears] = useState(20);
   const [ageMonths, setAgeMonths] = useState(0);
   const [ageDays, setAgeDays] = useState(0);
-  const [context, setContext] = useState<CalculationContext>('haid');
-  const [experience, setExperience] = useState<ExperienceStatus>('mutadah');
+  const [context, setContext] = useState<CalculationContext | ''>('');
+  const [experience, setExperience] = useState<ExperienceStatus | ''>('');
   const [laborDate, setLaborDate] = useState<string>('');
   const [isRamadhan, setIsRamadhan] = useState(false);
   const [isFirstMonthIstihadloh, setIsFirstMonthIstihadloh] = useState(true);
@@ -131,14 +135,105 @@ export default function App() {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
+  // 1. Sync URL parameters to state (for device back button support in Android TWA / PWA)
+  useEffect(() => {
+    if (location.pathname !== '/') return;
+
+    const urlStep = parseInt(searchParams.get('step') || '1', 10);
+    const urlModal = searchParams.get('modal') || '';
+    const urlMenu = searchParams.get('menu') || '';
+
+    // Step boundary check (1 to 5)
+    if (urlStep >= 1 && urlStep <= 5 && urlStep !== step) {
+      setStep(urlStep);
+    }
+    
+    const tDetail = urlModal === 'detail';
+    if (tDetail !== isDetailOpen) {
+      setIsDetailOpen(tDetail);
+    }
+
+    const tTimeline = urlModal === 'timeline';
+    if (tTimeline !== isTimelineOpen) {
+      setIsTimelineOpen(tTimeline);
+    }
+
+    const tQodlo = urlModal === 'qodlo';
+    if (tQodlo !== isQodloOpen) {
+      setIsQodloOpen(tQodlo);
+    }
+
+    const tSidebar = urlMenu === 'open';
+    if (tSidebar !== isSidebarOpen) {
+      setIsSidebarOpen(tSidebar);
+    }
+  }, [searchParams, location.pathname]);
+
+  // 2. Sync state changes back to URL parameters
+  useEffect(() => {
+    if (location.pathname !== '/') return;
+
+    const urlStep = parseInt(searchParams.get('step') || '1', 10);
+    const urlModal = searchParams.get('modal') || '';
+    const urlMenu = searchParams.get('menu') || '';
+
+    const hasModalInUrl = !!urlModal;
+    const hasModalInState = isDetailOpen || isTimelineOpen || isQodloOpen;
+
+    const hasMenuInUrl = urlMenu === 'open';
+    const hasMenuInState = isSidebarOpen;
+
+    // Detect manual closes (user clicked "X" or clicked on backdrop)
+    if (hasModalInUrl && !hasModalInState) {
+      navigate(-1);
+      return;
+    }
+
+    if (hasMenuInUrl && !hasMenuInState) {
+      navigate(-1);
+      return;
+    }
+
+    const params = new URLSearchParams(searchParams);
+    let changed = false;
+    let shouldReplace = false;
+
+    if (urlStep !== step && step >= 1 && step <= 5) {
+      params.set('step', step.toString());
+      params.delete('modal');
+      params.delete('menu');
+      changed = true;
+      // If resetting to step 1 from a finished analysis, replace history entry
+      if (step === 1 && urlStep === 5) {
+        shouldReplace = true;
+      }
+    }
+
+    const targetModal = isDetailOpen ? 'detail' : (isTimelineOpen ? 'timeline' : (isQodloOpen ? 'qodlo' : ''));
+    if (urlModal !== targetModal && targetModal) {
+      params.set('modal', targetModal);
+      changed = true;
+    }
+
+    const targetMenu = isSidebarOpen ? 'open' : '';
+    if (urlMenu !== targetMenu && targetMenu) {
+      params.set('menu', targetMenu);
+      changed = true;
+    }
+
+    if (changed) {
+      navigate({ search: params.toString() }, { replace: shouldReplace });
+    }
+  }, [step, isDetailOpen, isTimelineOpen, isQodloOpen, isSidebarOpen, location.pathname, navigate, searchParams]);
+
   const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
 
   const isMumayyizah = useMemo(() => checkIfMumayyizah(records), [records]);
   const uniqueBloodCount = useMemo(() => countUniqueBloodAttributes(records), [records]);
 
   // Step 4: Konteks Waktu
-  const [startTime, setStartTime] = useState('00:00');
-  const [stopTime, setStopTime] = useState('00:00');
+  const [startTime, setStartTime] = useState('');
+  const [stopTime, setStopTime] = useState('');
   const [hasPerformed, setHasPerformed] = useState(false);
 
   const addDayRecord = (date: Date, template?: Partial<DayRecord>) => {
@@ -179,7 +274,7 @@ export default function App() {
     try {
       const data: FiqhAnalysisRequest = {
         ageYears, ageMonths, ageDays,
-        context, experience,
+        context: context as any, experience: experience as any,
         records, habit,
         startTime, stopTime,
         laborDate,
@@ -199,172 +294,329 @@ export default function App() {
     }
   };
 
+  const isCurrentStepValid = useMemo(() => {
+    if (step === 1) {
+      return !!birthDateMasehi && (context !== 'nifas' || !!laborDate) && (experience === 'mubtadiah' || experience === 'mutadah');
+    }
+    if (step === 2) {
+      return records.length > 0;
+    }
+    if (step === 3) {
+      return true;
+    }
+    if (step === 4) {
+      return !!startTime && !!stopTime;
+    }
+    return true;
+  }, [step, birthDateMasehi, context, laborDate, experience, startTime, stopTime, records]);
+
+  const handleNext = () => {
+    const nextStep = allSteps.find(s => s.id > step && !s.hideFor?.includes(experience));
+    if (nextStep) setStep(nextStep.id);
+  };
+
+  const handleBack = () => {
+    const prevSteps = allSteps.filter(s => s.id < step && !s.hideFor?.includes(experience));
+    const prevStep = prevSteps[prevSteps.length - 1];
+    if (prevStep) setStep(prevStep.id);
+  };
+
+  const renderWizardProgress = () => {
+    if (step > 4) return null;
+    
+    const filteredSteps = steps;
+    const currentIdx = filteredSteps.findIndex(s => s.id === step);
+    const totalStepsCount = filteredSteps.length;
+    
+    return (
+      <div className="border-b border-border-main/50 bg-bg-side px-6 py-4 flex items-center justify-between gap-4 shadow-[0_1px_4px_rgba(0,0,0,0.02)] animate-in fade-in duration-300">
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] font-bold text-text-muted tracking-tight">Progres Analisis Fiqih</span>
+          <div className="flex items-center gap-1.5">
+            {Array.from({ length: totalStepsCount }).map((_, idx) => {
+              const sObj = filteredSteps[idx];
+              const isCurrent = idx === currentIdx;
+              const isPassed = idx < currentIdx;
+              return (
+                <div 
+                  key={idx} 
+                  className={cn(
+                    "h-2 rounded-full transition-all duration-300 cursor-pointer",
+                    isCurrent ? "w-8 bg-accent" : (isPassed ? "w-4 bg-accent/60" : "w-2 bg-border-main")
+                  )}
+                  onClick={() => sObj && setStep(sObj.id)}
+                  title={sObj?.name}
+                />
+              );
+            })}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-bold text-accent bg-[#FFF5F5] dark:bg-accent/10 border border-accent/20 px-3 py-1 rounded-full shadow-xs">
+            {allSteps.find(s => s.id === step)?.name}
+          </span>
+        </div>
+      </div>
+    );
+  };
+
+  const renderStickyBottomNav = () => {
+    const isNextDisabled = !isCurrentStepValid;
+
+    return (
+      <div className="border-t border-border-main/50 bg-bg-side/80 backdrop-blur-md px-6 py-4 flex items-center justify-between gap-4 shadow-[0_-4px_24px_rgba(0,0,0,0.04)] pb-safe z-30">
+        <button
+          type="button"
+          onClick={handleBack}
+          disabled={step === 1}
+          className={cn(
+            "h-[52px] px-6 rounded-full text-[13px] font-bold tracking-tight transition-all flex items-center gap-2 cursor-pointer border active:scale-95 duration-200",
+            step === 1 
+              ? "opacity-35 border-border-main text-text-muted cursor-not-allowed" 
+              : "border-border-main bg-transparent hover:border-accent text-text-contrast hover:bg-bg-main"
+          )}
+        >
+          <ChevronLeft className="w-4 h-4 stroke-[2.5]" /> <span>Kembali</span>
+        </button>
+
+        <button
+          type="button"
+          disabled={isNextDisabled || isLoading}
+          onClick={() => {
+            if (step === 4) {
+              handleAnalyze();
+            } else {
+              handleNext();
+            }
+          }}
+          className={cn(
+            "h-[52px] flex-1 max-w-[280px] rounded-full text-[14px] font-semibold tracking-wide transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-95 duration-200",
+            isNextDisabled 
+              ? "bg-neutral-200 dark:bg-zinc-800 text-neutral-400 dark:text-zinc-500 border border-neutral-300 dark:border-zinc-700 cursor-not-allowed shadow-none" 
+              : "bg-gradient-to-r from-[#B91C1C] to-[#991B1B] text-white hover:brightness-110 shadow-accent/20"
+          )}
+        >
+          {isLoading ? (
+            <>
+              <RefreshCw className="w-4 h-4 animate-spin" /> <span>Menganalisis...</span>
+            </>
+          ) : (
+            <>
+              <span>{step === 4 ? "Hitung Fiqh" : "Lanjut"}</span> 
+              <ChevronRight className="w-4 h-4 stroke-[2.5]" />
+            </>
+          )}
+        </button>
+      </div>
+    );
+  };
+
   const allSteps = [
-    { id: 1, name: "Profil Dasar", description: "Masukkan data awal & kondisi" },
-    { id: 2, name: "Kalender Darah", description: "Tentukan karakteristik darah harian" },
+    { id: 1, name: "Profil Dasar", description: "Masukkan data tanggal lahir, kondisi & status pengalaman" },
+    { id: 2, name: "Kalender Darah", description: "Tandai hari-hari mengeluarkan darah dalam sebulan" },
     { id: 3, name: "Riwayat Adat", description: "Atur ingatan kebiasaan siklus", hideFor: ['mubtadiah'] },
-    { id: 4, name: "Konteks Waktu", description: "Detail waktu sholat & berhenti" },
-    { id: 5, name: "Hasil Analisis", description: "Output hukum & qodho" },
+    { id: 4, name: "Konteks Waktu", description: "Detail waktu keluar & berhenti darah" },
+    { id: 5, name: "Hasil Analisis", description: "Output kesimpulan hukum & kewajiban qodho" }
   ];
 
   const steps = allSteps.filter(s => {
     if (s.id === 3) {
-      if (context === 'nifas') return true;
       if (experience === 'mubtadiah') return false;
     }
+    if (s.id === 5) return false;
     return true;
   });
   const currentStep = allSteps.find(s => s.id === step) || allSteps[0];
 
-  const renderStepNav = () => (
-    <div className="space-y-6">
-      {steps.filter(s => s.id < 5).map((s, idx) => (
-        <button 
-          key={s.id} 
-          onClick={() => {
-            setStep(s.id);
-            setIsSidebarOpen(false);
-          }}
-          className={cn(
-          "flex items-center gap-3 transition-colors w-full",
-          step === s.id ? "text-accent" : (step > s.id ? "text-text-contrast/80" : "text-slate-500")
-        )}>
-          <div className={cn(
-            "w-6 h-6 rounded-full border flex items-center justify-center text-[10px] font-bold",
-            step === s.id ? "border-accent" : (step > s.id ? "border-text-contrast/40" : "border-slate-700")
-          )}>
-            {(idx + 1).toString().padStart(2, '0')}
-          </div>
-          <span className="text-xs font-semibold uppercase tracking-wider">{s.name}</span>
-        </button>
-      ))}
-    </div>
-  );
+  const renderStepNav = () => {
+    const getStepIcon = (id: number) => {
+      switch (id) {
+        case 1: return <Compass className="w-4.5 h-4.5" />;
+        case 2: return <Calendar className="w-4.5 h-4.5" />;
+        case 3: return <History className="w-4.5 h-4.5" />;
+        case 4: return <Clock className="w-4.5 h-4.5" />;
+        case 5: return <ShieldCheck className="w-4.5 h-4.5" />;
+        default: return <Compass className="w-4.5 h-4.5" />;
+      }
+    };
 
-  const renderStep1 = () => (
-    <div className="space-y-6 md:space-y-8">
-      <div className="space-y-4">
-        <h3 className="text-xs font-black uppercase tracking-widest text-text-contrast font-display">Tanggal Lahir</h3>
-        <input 
-            type="date"
-            value={birthDateMasehi}
-            onChange={e => {
-                const date = e.target.value;
-                setBirthDateMasehi(date);
-                if (date) {
+    return (
+      <div className="space-y-2.5">
+        {steps.map((s, idx) => {
+          const isActive = step === s.id;
+          const isPassed = step > s.id;
+          return (
+            <button 
+              key={s.id} 
+              onClick={() => {
+                setStep(s.id);
+                setIsSidebarOpen(false);
+              }}
+              className={cn(
+                "flex items-center gap-3.5 transition-all duration-200 w-full px-4 py-3 rounded-xl text-sm font-medium",
+                isActive 
+                  ? "bg-[#FFF5F5] dark:bg-accent/10 border-l-4 border-l-[#B91C1C] text-[#B91C1C] shadow-xs font-semibold"
+                  : "text-text-muted hover:text-text-contrast hover:bg-bg-main"
+              )}
+            >
+              <div className={cn(
+                "w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-colors",
+                isActive ? "bg-[#B91C1C]/10 text-[#B91C1C]" : (isPassed ? "bg-emerald-500/10 text-emerald-500" : "bg-neutral-100 dark:bg-zinc-800 text-text-muted")
+              )}>
+                {isPassed ? <CheckCircle2 className="w-3.5 h-3.5" /> : getStepIcon(s.id)}
+              </div>
+              <span className="text-[13px] tracking-tight">{s.name}</span>
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderStep1Redesign = () => (
+    <div className="space-y-6 md:space-y-8 flex flex-col justify-center min-h-[40vh] py-2">
+      <div className="text-center space-y-2">
+        <h2 className="text-xl md:text-2xl font-display font-bold tracking-tight text-text-contrast">
+          Profil & Kondisi Awal
+        </h2>
+        <p className="text-sm text-text-muted">
+          Langkah pertama menentukan kerangka hukum berdasarkan usia fardu Anda.
+        </p>
+      </div>
+
+      <div className="max-w-3xl mx-auto w-full space-y-6 md:space-y-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {/* Tanggal Lahir (Kiri) */}
+          <div className="bg-bg-card p-6 md:p-8 rounded-2xl border border-border-main/60 shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:scale-[0.98] active:scale-[0.97] transition-all duration-300 space-y-6 focus-within:border-accent">
+            <h3 className="text-sm font-semibold tracking-tight text-text-contrast font-display">Tanggal Lahir</h3>
+            
+            <div className="relative border-b border-border-main/80 focus-within:border-accent transition-all duration-300 pb-1.5 pt-4">
+              <input 
+                type="date"
+                id="birth_date_input"
+                placeholder=" "
+                value={birthDateMasehi}
+                onChange={e => {
+                  const date = e.target.value;
+                  setBirthDateMasehi(date);
+                  if (date) {
                     const age = calculateHijriAge(date);
                     setAgeYears(age.years);
                     setAgeMonths(age.months);
                     setAgeDays(age.days);
-                }
-            }}
-            max={new Date().toISOString().split('T')[0]}
-            className="w-full bg-bg-card border border-border-main p-3 md:p-4 rounded-xl text-sm text-text-contrast font-bold focus:outline-none focus:border-accent"
-        />
-        <div className="p-3.5 bg-accent/15 border border-accent/25 rounded-xl text-xs text-text-contrast font-black italic">
-           Usia Hijriyah Anda: {ageYears} Tahun, {ageMonths} Bulan, {ageDays} Hari
-        </div>
-        
-        {ageYears < 9 && (
-          <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex gap-3 text-xs text-red-600 dark:text-red-400 font-bold italic">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-            <span>Usia minimal untuk Haid adalah 9 tahun Qomariyah kurang 16 hari.</span>
-          </div>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-        <div className="space-y-4">
-          <h3 className="text-xs font-black uppercase tracking-widest text-text-contrast font-display">Kondisi Awal</h3>
-          <div className="flex gap-3">
-            <button 
-              onClick={() => setContext('haid')}
-              className={cn(
-                "flex-1 py-4 md:py-6 px-3 md:px-4 rounded-2xl border transition-all flex flex-col items-center gap-2 md:gap-3",
-                context === 'haid' ? "border-accent bg-accent/20 text-accent font-black shadow-lg shadow-accent/10" : "border-border-main bg-bg-card hover:border-accent/40 hover:text-text-contrast text-text-muted"
-              )}
-            >
-              <Droplet className="w-5 h-5 md:w-6 md:h-6" />
-              <span className="text-xs font-black uppercase tracking-widest">Haid</span>
-            </button>
-            <button 
-              onClick={() => setContext('nifas')}
-              className={cn(
-                "flex-1 py-4 md:py-6 px-3 md:px-4 rounded-2xl border transition-all flex flex-col items-center gap-2 md:gap-3",
-                context === 'nifas' ? "border-accent bg-accent/20 text-accent font-black shadow-lg shadow-accent/10" : "border-border-main bg-bg-card hover:border-accent/40 hover:text-text-contrast text-text-muted"
-              )}
-            >
-              <Droplet className="w-5 h-5 md:w-6 md:h-6" />
-              <span className="text-xs font-black uppercase tracking-widest">Nifas</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <h3 className="text-xs font-black uppercase tracking-widest text-text-contrast font-display">Status Pengalaman</h3>
-          <div className="flex gap-3">
-            <button 
-              onClick={() => setExperience('mubtadiah')}
-              className={cn(
-                "flex-1 py-4 md:py-6 px-3 md:px-4 rounded-2xl border transition-all flex flex-col items-center gap-2 md:gap-3",
-                experience === 'mubtadiah' ? "border-accent bg-accent/20 text-accent font-black shadow-lg shadow-accent/10" : "border-border-main bg-bg-card hover:border-accent/40 hover:text-text-contrast text-text-muted"
-              )}
-            >
-              <CheckCircle2 className="w-5 h-5 md:w-6 md:h-6" />
-              <span className="text-xs font-black uppercase tracking-widest">Mubtadi'ah</span>
-            </button>
-            <button 
-              onClick={() => setExperience('mutadah')}
-              className={cn(
-                "flex-1 py-4 md:py-6 px-3 md:px-4 rounded-2xl border transition-all flex flex-col items-center gap-2 md:gap-3",
-                experience === 'mutadah' ? "border-accent bg-accent/20 text-accent font-black shadow-lg shadow-accent/10" : "border-border-main bg-bg-card hover:border-accent/40 hover:text-text-contrast text-text-muted"
-              )}
-            >
-              <History className="w-5 h-5 md:w-6 md:h-6" />
-              <span className="text-xs font-black uppercase tracking-widest">Mu'tadah</span>
-            </button>
-          </div>
-          
-          <AnimatePresence>
-            {context === 'nifas' && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0 }} 
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="pt-4 border-t border-border-main space-y-4 overflow-hidden"
+                  }
+                }}
+                max={new Date().toISOString().split('T')[0]}
+                className="peer block w-full bg-transparent border-0 px-0 py-1 text-sm text-text-contrast font-semibold focus:outline-none focus:ring-0 cursor-pointer"
+              />
+              <label 
+                htmlFor="birth_date_input"
+                className="absolute top-0 text-xs text-text-muted transition-all duration-300 origin-0 transform -translate-y-4 scale-75 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-4 peer-focus:scale-75 peer-focus:-translate-y-4 peer-focus:text-accent font-semibold"
               >
-                <div className="p-4 bg-accent/5 border border-border-main rounded-xl space-y-4">
-                  <h4 className="text-xs font-black text-accent uppercase tracking-widest">Informasi Tambahan Nifas</h4>
-                  <div className="space-y-4">
-                    <h3 className="text-xs font-black uppercase tracking-widest text-text-contrast font-display">Waktu Persalinan</h3>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-extrabold text-text-muted uppercase">Input Tanggal & Jam PERSALINAN</label>
+                Pilih Tanggal Lahir Anda
+              </label>
+            </div>
+
+            {birthDateMasehi ? (
+              <div className="p-3.5 bg-[#FFF5F5] dark:bg-accent/10 border border-accent/20 rounded-xl text-xs text-text-contrast font-medium">
+                 Usia Hijriah Anda: <span className="font-bold text-accent">{ageYears} Tahun, {ageMonths} Bulan, {ageDays} Hari</span>
+              </div>
+            ) : (
+              <p className="text-xs text-text-muted italic leading-relaxed">Dibutuhkan untuk kalibrasi usia Qomariyah Anda secara syar'u.</p>
+            )}
+            
+            {birthDateMasehi && ageYears < 9 && (
+              <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex gap-3 text-xs text-red-600 dark:text-red-400 font-semibold italic">
+                <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-500" />
+                <span>Usia minimal untuk Haid adalah 9 tahun Qomariyah kurang 16 hari.</span>
+              </div>
+            )}
+          </div>
+
+          {/* Kondisi Awal (Kanan) */}
+          <div className="bg-bg-card p-6 md:p-8 rounded-2xl border border-border-main/60 shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:scale-[0.98] active:scale-[0.97] transition-all duration-300 space-y-4">
+            <h3 className="text-sm font-semibold tracking-tight text-text-contrast font-display">Kondisi Awal</h3>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <button 
+                type="button"
+                onClick={() => {
+                  setContext('haid');
+                  setLaborDate('');
+                }}
+                className={cn(
+                  "py-5 px-4 rounded-xl border transition-all flex flex-col items-center justify-center gap-3 cursor-pointer",
+                  context === 'haid' 
+                    ? "border-[#B91C1C] bg-[#FFF5F5] dark:bg-accent/10 text-[#B91C1C] font-semibold shadow-xs" 
+                    : "border-border-main bg-bg-main/50 hover:border-accent/40 text-text-muted"
+                )}
+              >
+                <Droplet className="w-7 h-7" />
+                <span className="text-xs font-semibold">Haid</span>
+              </button>
+
+              <button 
+                type="button"
+                onClick={() => setContext('nifas')}
+                className={cn(
+                  "py-5 px-4 rounded-xl border transition-all flex flex-col items-center justify-center gap-3 cursor-pointer",
+                  context === 'nifas' 
+                    ? "border-[#B91C1C] bg-[#FFF5F5] dark:bg-accent/10 text-[#B91C1C] font-semibold shadow-xs" 
+                    : "border-border-main bg-bg-main/50 hover:border-accent/40 text-text-muted"
+                )}
+              >
+                <Droplet className="w-7 h-7 rotate-180" />
+                <span className="text-xs font-semibold">Nifas</span>
+              </button>
+            </div>
+
+            <AnimatePresence>
+              {context === 'nifas' && (
+                <motion.div 
+                  initial={{ opacity: 0, height: 0 }} 
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="pt-4 border-t border-border-main/40 space-y-4 overflow-hidden"
+                >
+                  <div className="p-4 bg-[#FFF5F5] dark:bg-accent/5 border border-accent/20 rounded-xl space-y-4">
+                    <h4 className="text-xs font-bold text-accent font-display">Data Tambahan Nifas</h4>
+                    
+                    <div className="relative border-b border-border-main/80 focus-within:border-accent transition-all duration-300 pb-1.5 pt-4">
                       <input 
                         type="datetime-local" 
+                        id="labor_date_input"
+                        placeholder=" "
                         value={laborDate} 
                         onChange={e => setLaborDate(e.target.value)}
-                        className="w-full bg-bg-card border border-border-main p-3 rounded-xl text-sm text-text-contrast focus:outline-none focus:border-accent"
+                        className="peer block w-full bg-transparent border-0 px-0 py-1 text-xs text-text-contrast font-bold focus:outline-none focus:ring-0 cursor-pointer"
                       />
-                      <p className="text-[10px] text-text-muted italic">Dibutuhkan untuk menghitung batas maksimal nifas 60 hari.</p>
+                      <label 
+                        htmlFor="labor_date_input"
+                        className="absolute top-0 text-[10px] text-text-muted transition-all duration-300 origin-0 transform -translate-y-4 scale-75 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-4 peer-focus:scale-75 peer-focus:-translate-y-4 peer-focus:text-accent font-semibold"
+                      >
+                        Tanggal dan Jam Persalinan
+                      </label>
                     </div>
 
-                    <div className="pt-4 border-t border-border-main/20">
-                      <p className="text-[10px] mb-3 uppercase font-black text-text-contrast">Pernah Haidl Sebelumnya?</p>
-                      <div className="flex gap-3">
+                    <div className="pt-2">
+                      <p className="text-xs mb-2 font-semibold text-text-contrast">Sudah pernah haid sebelumnya?</p>
+                      <div className="flex gap-2">
                         <button 
+                          type="button"
                           onClick={() => setHabit({...habit, pernahHaid: false})}
                           className={cn(
-                            "flex-1 py-3 px-2 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
-                            habit.pernahHaid === false ? "bg-red-500 text-white border-red-500 shadow-md" : "bg-bg-card text-text-muted border-border-main"
+                            "flex-1 py-2 px-2 rounded-lg border text-xs font-semibold transition-all cursor-pointer",
+                            habit.pernahHaid === false ? "bg-[#B91C1C] text-white border-[#B91C1C]" : "bg-bg-card text-text-muted border-border-main hover:border-accent/30"
                           )}
                         >
                           Belum Pernah
                         </button>
                         <button 
+                          type="button"
                           onClick={() => setHabit({...habit, pernahHaid: true})}
                           className={cn(
-                            "flex-1 py-3 px-2 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
-                            habit.pernahHaid === true ? "bg-emerald-500 text-white border-emerald-500 shadow-md" : "bg-bg-card text-text-muted border-border-main"
+                            "flex-1 py-2 px-2 rounded-lg border text-xs font-semibold transition-all cursor-pointer",
+                            habit.pernahHaid === true ? "bg-[#B91C1C] text-white border-[#B91C1C]" : "bg-bg-card text-text-muted border-border-main hover:border-accent/30"
                           )}
                         >
                           Sudah Pernah
@@ -372,45 +624,114 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
 
-        <div className="md:col-span-2 pt-6 border-t border-border-main">
-            <button 
-                onClick={() => setIsRamadhan(!isRamadhan)}
-                className={cn(
-                    "w-full flex items-center justify-between p-5 rounded-2xl border transition-all cursor-pointer",
-                    isRamadhan 
-                      ? "bg-accent/20 border-accent text-accent shadow-lg shadow-accent/10" 
-                      : "bg-bg-card border-border-main text-text-contrast hover:border-accent/40"
-                )}
+        {/* Status Pengalaman (Tengah) */}
+        <div className="space-y-4 pt-4 border-t border-border-main/50">
+          <h3 className="text-sm font-semibold text-text-contrast font-display text-center">Status Pengalaman</h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+            <button
+              type="button"
+              onClick={() => setExperience('mubtadiah')}
+              className={cn(
+                "p-6 rounded-2xl border transition-all flex flex-col items-center gap-3 text-center cursor-pointer relative shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:scale-[0.98] duration-300",
+                experience === 'mubtadiah'
+                  ? "border-[#B91C1C] bg-[#FFF5F5] dark:bg-accent/10"
+                  : "border-border-main bg-bg-card hover:border-accent/40"
+              )}
             >
-                <div className="flex items-center gap-3">
-                    <Target className={cn("w-5 h-5", isRamadhan ? "text-accent" : "text-text-muted")} />
-                    <div className="text-left">
-                        <div className="text-xs font-black uppercase tracking-widest leading-none">Bulan Ramadhan / Puasa Wajib</div>
-                        <div className="text-[10px] font-bold text-text-muted lowercase mt-1.5">Aktifkan untuk kalkulasi qodlo puasa otomatis</div>
-                    </div>
+              {experience === 'mubtadiah' && (
+                <div className="absolute top-4 right-4 bg-[#B91C1C] text-white p-1 rounded-full">
+                  <CheckCircle2 className="w-4 h-4" />
                 </div>
-                <div className={cn(
-                    "w-10 h-5 rounded-full relative transition-colors",
-                    isRamadhan ? "bg-accent" : "bg-border-main"
-                )}>
-                    <div className={cn(
-                        "absolute top-1 w-3 h-3 bg-white rounded-full transition-transform",
-                        isRamadhan ? "translate-x-6" : "translate-x-1"
-                    )} />
-                </div>
+              )}
+              <div className={cn(
+                "w-12 h-12 rounded-full flex items-center justify-center mb-1 transition-transform",
+                experience === 'mubtadiah' ? "bg-accent/10 text-accent scale-110" : "bg-neutral-100 dark:bg-zinc-800 text-text-muted"
+              )}>
+                <Baby className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-widest text-[#B91C1C]">Mubtadi'ah</h4>
+                <span className="text-[10px] text-text-muted font-semibold block mt-0.5">Pemula</span>
+                <p className="text-xs text-text-muted mt-2 leading-relaxed max-w-xs">
+                  Baru pertama kali mengalami haid / nifas sepanjang hidup Anda dan belum memiliki siklus adat tetap.
+                </p>
+              </div>
             </button>
+
+            <button
+              type="button"
+              onClick={() => setExperience('mutadah')}
+              className={cn(
+                "p-6 rounded-2xl border transition-all flex flex-col items-center gap-3 text-center cursor-pointer relative shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:scale-[0.98] duration-300",
+                experience === 'mutadah'
+                  ? "border-[#B91C1C] bg-[#FFF5F5] dark:bg-accent/10"
+                  : "border-border-main bg-bg-card hover:border-accent/40"
+              )}
+            >
+              {experience === 'mutadah' && (
+                <div className="absolute top-4 right-4 bg-[#B91C1C] text-white p-1 rounded-full">
+                  <CheckCircle2 className="w-4 h-4" />
+                </div>
+              )}
+              <div className={cn(
+                "w-12 h-12 rounded-full flex items-center justify-center mb-1 transition-transform",
+                experience === 'mutadah' ? "bg-accent/10 text-accent scale-110" : "bg-neutral-100 dark:bg-zinc-800 text-text-muted"
+              )}>
+                <History className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-widest text-[#B91C1C]">Mu'tadah</h4>
+                <span className="text-[10px] text-text-muted font-semibold block mt-0.5">Berpengalaman</span>
+                <p className="text-xs text-text-muted mt-2 leading-relaxed max-w-xs">
+                  Sudah sering atau pernah mengalami haid / nifas sebelumnya dan memiliki rujukan siklus adat tetap.
+                </p>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {/* Ramadhan Toggle (Full Width di bawah) */}
+        <div className="pt-4 border-t border-border-main/50">
+          <button 
+            type="button"
+            onClick={() => setIsRamadhan(!isRamadhan)}
+            className={cn(
+              "w-full flex items-center justify-between p-5 rounded-2xl border transition-all cursor-pointer shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:scale-[0.98] duration-300",
+              isRamadhan 
+                ? "bg-[#FFF5F5] dark:bg-accent/15 border-[#B91C1C] text-text-contrast" 
+                : "bg-bg-card border-border-main text-text-contrast hover:border-accent/30"
+            )}
+          >
+            <div className="flex items-center gap-3">
+              <Target className={cn("w-5 h-5", isRamadhan ? "text-accent" : "text-text-muted")} />
+              <div className="text-left">
+                <div className="text-xs font-semibold tracking-wide">Kejadian di Bulan Ramadan</div>
+                <div className="text-[11px] text-text-muted mt-1 leading-normal">Aktifkan jika pendarahan bertepatan dengan puasa fardhu</div>
+              </div>
+            </div>
+            <div className={cn(
+              "w-10 h-5 rounded-full relative transition-colors duration-200",
+              isRamadhan ? "bg-[#B91C1C]" : "bg-neutral-300 dark:bg-neutral-700"
+            )}>
+              <div className={cn(
+                "absolute top-1 w-3 h-3 bg-white rounded-full transition-transform duration-200",
+                isRamadhan ? "translate-x-6" : "translate-x-1"
+              )} />
+            </div>
+          </button>
         </div>
       </div>
     </div>
   );
 
-  const renderStep2 = () => {
+  const renderStep5Redesign = () => {
     const monthStart = startOfMonth(currentCalendarDate);
     const monthEnd = endOfMonth(monthStart);
     const startDate = startOfWeek(monthStart, { weekStartsOn: 1 }); // Senin
@@ -430,45 +751,50 @@ export default function App() {
 
     return (
       <div className="space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-bg-card p-4 rounded-3xl border border-border-main shadow-sm">
-          <div className="flex items-center gap-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-bg-card p-5 rounded-2xl border border-border-main/60 shadow-[0_2px_12px_rgba(0,0,0,0.04)]">
+          <div className="flex items-center gap-3">
             <button 
+              type="button"
               onClick={prevMonth}
               disabled={currentCalendarDate.getMonth() === 0}
-              className="p-2 hover:bg-bg-side hover:text-accent rounded-xl disabled:opacity-20 disabled:cursor-not-allowed transition-all"
+              className="p-2 bg-bg-main/50 hover:bg-bg-bottom hover:text-accent rounded-full border border-border-main/50 disabled:opacity-20 disabled:cursor-not-allowed transition-all active:scale-95 cursor-pointer"
             >
-              <ChevronLeft className="w-5 h-5" />
+              <ChevronLeft className="w-5 h-5 stroke-[2.5]" />
             </button>
-            <h3 className="text-base font-black uppercase tracking-widest min-w-[120px] text-center text-text-contrast font-display">
+            <h3 className="text-[15px] font-bold text-text-contrast min-w-[130px] text-center font-display tracking-tight">
               {format(currentCalendarDate, 'MMMM yyyy', { locale: id })}
             </h3>
             <button 
+              type="button"
               onClick={nextMonth}
               disabled={currentCalendarDate.getMonth() === 11}
-              className="p-2 hover:bg-bg-side hover:text-accent rounded-xl disabled:opacity-20 disabled:cursor-not-allowed transition-all"
+              className="p-2 bg-bg-main/50 hover:bg-bg-bottom hover:text-accent rounded-full border border-border-main/50 disabled:opacity-20 disabled:cursor-not-allowed transition-all active:scale-95 cursor-pointer"
             >
-              <ChevronRight className="w-5 h-5" />
+              <ChevronRight className="w-5 h-5 stroke-[2.5]" />
             </button>
           </div>
           {!showResetConfirm ? (
             <button 
+              type="button"
               onClick={() => setShowResetConfirm(true)}
-              className="flex items-center justify-center gap-2 px-4 py-2 bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 rounded-xl text-[10px] font-bold uppercase hover:bg-red-500/20 transition-all cursor-pointer"
+              className="flex items-center justify-center gap-2 px-4 py-2 bg-red-500/10 text-[#C0392B] dark:text-red-400 border border-red-500/20 rounded-xl text-xs font-semibold hover:bg-red-500/20 transition-all cursor-pointer"
             >
-              <Trash2 className="w-3.5 h-3.5" /> Reset Kalender
+              <Trash2 className="w-4 h-4" /> Reset Kalender
             </button>
           ) : (
-            <div className="flex items-center gap-1.5 animate-in fade-in zoom-in-95 duration-200">
-              <span className="text-[10px] uppercase font-black text-red-600 dark:text-red-400 mr-1 animate-pulse">Yakin reset?</span>
+            <div className="flex items-center gap-1.5 animate-in fade-in duration-200">
+              <span className="text-xs font-semibold text-red-600 dark:text-red-400 mr-2 animate-pulse">Yakin reset kalender?</span>
               <button 
+                type="button"
                 onClick={resetCalendar}
-                className="px-2.5 py-1.5 bg-red-600 text-white rounded-lg text-[10px] font-bold uppercase hover:bg-red-700 transition-all cursor-pointer"
+                className="px-3 py-1.5 bg-[#B91C1C] text-white rounded-lg text-xs font-bold hover:brightness-110 active:scale-95 transition-all cursor-pointer"
               >
                 Ya
               </button>
               <button 
+                type="button"
                 onClick={() => setShowResetConfirm(false)}
-                className="px-2.5 py-1.5 bg-bg-side text-text-main border border-border-main rounded-lg text-[10px] font-bold uppercase hover:bg-bg-main transition-all cursor-pointer"
+                className="px-3 py-1.5 bg-bg-side text-text-main border border-border-main rounded-lg text-xs font-bold hover:bg-bg-main active:scale-95 transition-all cursor-pointer"
               >
                 Batal
               </button>
@@ -476,9 +802,9 @@ export default function App() {
           )}
         </div>
 
-        <div className="grid grid-cols-7 gap-2 bg-bg-card p-4 rounded-3xl border border-border-main shadow-sm translate-z-0">
-          {['S', 'S', 'R', 'K', 'J', 'S', 'M'].map((d, idx) => (
-            <div key={`${d}-${idx}`} className="p-2 text-center text-xs font-bold text-text-muted uppercase">
+        <div className="grid grid-cols-7 gap-y-3 gap-x-2 bg-bg-card p-5 rounded-2xl border border-border-main/60 shadow-[0_2px_12px_rgba(0,0,0,0.04)] translate-z-0">
+          {['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Ahd'].map((d, idx) => (
+            <div key={`${d}-${idx}`} className="p-1 text-center text-[11px] font-bold text-text-muted tracking-tight font-display">
               {d}
             </div>
           ))}
@@ -488,201 +814,216 @@ export default function App() {
             const isCurrentMonth = isSameMonth(d, monthStart);
             const isLaborDay = laborDate && isSameDay(d, parseISO(laborDate));
             const isAnchor = lastClickedDate && isSameDay(d, lastClickedDate);
+            const isTodayDate = isSameDay(d, startOfToday());
+            
+            // Highlight between range selection nicely
+            const isBetween = lastClickedDate && selectedDate && (
+              (d > lastClickedDate && d < selectedDate) ||
+              (d < lastClickedDate && d > selectedDate)
+            );
 
             return (
-              <button
-                key={i}
-                onClick={() => {
-                  const isSameAsLast = lastClickedDate && isSameDay(d, lastClickedDate);
-                  
-                  if (lastClickedDate && !isSameAsLast) {
-                    // LOGIKA RENTANG OTOMATIS
-                    const start = lastClickedDate;
-                    const end = d;
-                    const interval = eachDayOfInterval({
-                      start: start < end ? start : end,
-                      end: start < end ? end : start
-                    });
+              <div key={i} className="flex justify-center items-center relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const isSameAsLast = lastClickedDate && isSameDay(d, lastClickedDate);
                     
-                    const anchorRecord = records.find(r => isSameDay(parseISO(r.date), lastClickedDate));
-                    const template = anchorRecord ? { 
-                      color: anchorRecord.color, 
-                      texture: anchorRecord.texture, 
-                      aroma: anchorRecord.aroma 
-                    } : undefined;
+                    if (lastClickedDate && !isSameAsLast) {
+                      // RANGE AUTO SELECT LOGIC
+                      const start = lastClickedDate;
+                      const end = d;
+                      const interval = eachDayOfInterval({
+                        start: start < end ? start : end,
+                        end: start < end ? end : start
+                      });
+                      
+                      const anchorRecord = records.find(r => isSameDay(parseISO(r.date), lastClickedDate));
+                      const template = anchorRecord ? { 
+                        color: anchorRecord.color, 
+                        texture: anchorRecord.texture, 
+                        aroma: anchorRecord.aroma 
+                      } : undefined;
 
-                    interval.forEach(date => {
-                        if (anchorRecord) addDayRecord(date, template);
-                        else removeDayRecord(date);
-                    });
-                    
-                    setLastClickedDate(null);
-                  } else {
-                    // Toggle harian: Bersih -> Darah -> Bersih
-                    if (record) {
-                        removeDayRecord(d);
-                        setLastClickedDate(null);
+                      interval.forEach(date => {
+                          if (anchorRecord) addDayRecord(date, template);
+                          else removeDayRecord(date);
+                      });
+                      
+                      setLastClickedDate(null);
                     } else {
-                        addDayRecord(d);
-                        setLastClickedDate(d);
+                      if (record) {
+                          removeDayRecord(d);
+                          setLastClickedDate(null);
+                      } else {
+                          addDayRecord(d);
+                          setLastClickedDate(d);
+                      }
                     }
-                  }
+                    
+                    setSelectedDate(d);
+                  }}
+                  className={cn(
+                    "w-10 h-10 rounded-full flex items-center justify-center text-xs font-semibold focus:outline-none transition-all cursor-pointer relative",
+                    !isCurrentMonth 
+                      ? "opacity-25 bg-transparent text-text-muted pointer-events-none" 
+                      : (isBetween ? "bg-[#FFF5F5] dark:bg-accent/15 text-accent font-bold" : "bg-[#FAFAFA] hover:bg-neutral-100 dark:bg-zinc-800 text-text-main"),
+                    isTodayDate && !record && "border border-accent text-accent font-bold",
+                    record && "shadow-md scale-102 font-black text-white",
+                    isLaborDay && "bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/30",
+                    isAnchor && "ring-4 ring-accent/40 ring-offset-2 ring-offset-bg-card"
+                  )}
+                  style={record ? (
+                    record.color === 'hitam' ? { backgroundColor: '#18181b', color: '#ffffff' } :
+                    record.color === 'merah' ? { backgroundColor: '#B91C1C', color: '#ffffff' } :
+                    record.color === 'coklat' ? { backgroundColor: '#78350f', color: '#ffffff' } :
+                    record.color === 'kuning' ? { backgroundColor: '#eab308', color: '#111827' } :
+                    record.color === 'keruh' ? { backgroundColor: '#64748b', color: '#ffffff' } :
+                    { backgroundColor: 'var(--color-accent)', color: '#ffffff' }
+                  ) : undefined}
+                >
+                  <span className="z-10">{format(d, 'd')}</span>
                   
-                  setSelectedDate(d);
-                }}
-                className={cn(
-                  "aspect-square relative transition-all text-center flex flex-col items-center justify-center rounded-full text-xs font-bold focus:outline-none cursor-pointer",
-                  !isCurrentMonth ? "opacity-25 bg-transparent text-text-muted pointer-events-none" : "bg-bg-main hover:bg-accent/10 hover:text-accent text-text-main",
-                  record && "shadow-lg scale-102 hover:opacity-95 font-black border border-white/10",
-                  isLaborDay && "bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/30 rounded-full",
-                  isAnchor && "ring-4 ring-accent/40 ring-offset-2 ring-offset-bg-card"
-                )}
-                style={record ? (
-                  record.color === 'hitam' ? { backgroundColor: '#18181b', color: '#ffffff' } :
-                  record.color === 'merah' ? { backgroundColor: '#e11d48', color: '#ffffff' } :
-                  record.color === 'coklat' ? { backgroundColor: '#78350f', color: '#ffffff' } :
-                  record.color === 'kuning' ? { backgroundColor: '#eab308', color: '#0f172a' } :
-                  record.color === 'keruh' ? { backgroundColor: '#64748b', color: '#ffffff' } :
-                  { backgroundColor: 'var(--color-accent)', color: '#ffffff' }
-                ) : undefined}
-              >
-                <span className="z-10">
-                  {format(d, 'd')}
-                </span>
-                
-                {isLaborDay && (
-                  <div className="absolute top-1 right-1">
-                    <Baby className="w-2.5 h-2.5 text-purple-600 dark:text-purple-400" />
-                  </div>
-                )}
+                  {isLaborDay && (
+                    <div className="absolute top-0.5 right-0.5">
+                      <Baby className="w-2.5 h-2.5 text-purple-600 dark:text-purple-400" />
+                    </div>
+                  )}
 
-                {isAnchor && !isLaborDay && (
-                  <div className="absolute top-1 right-1 flex gap-0.5 z-20">
-                    <div className="w-1.5 h-1.5 bg-accent rounded-full animate-ping" />
-                    <div className="w-1.5 h-1.5 bg-accent rounded-full absolute" />
-                  </div>
-                )}
+                  {isAnchor && !isLaborDay && (
+                    <div className="absolute top-0.5 right-0.5 flex gap-0.5 z-20">
+                      <span className="w-1.5 h-1.5 bg-accent rounded-full animate-ping" />
+                      <span className="w-1.5 h-1.5 bg-accent rounded-full absolute" />
+                    </div>
+                  )}
 
-                {record && (
-                  <div className="absolute bottom-1 w-1.5 h-1.5 rounded-full pointer-events-none z-10" style={{
-                    backgroundColor: 
-                      record.color === 'hitam' ? "#000000" :
-                      record.color === 'merah' ? "#E11D48" :
-                      record.color === 'coklat' ? "#78350F" :
-                      record.color === 'kuning' ? "#CA8A04" : "#6B7280"
-                  }} />
-                )}
-              </button>
+                  {record && (
+                    <div 
+                      className="absolute bottom-1 w-1.5 h-1.5 rounded-full pointer-events-none z-10 bg-white"
+                    />
+                  )}
+                </button>
+              </div>
             );
           })}
         </div>
 
-        <div className="flex flex-wrap gap-4 items-center justify-center p-4 bg-bg-card/50 rounded-xl border border-border-main/50">
-            <div className="flex items-center gap-1.5 grayscale opacity-50">
-                <div className="w-2 h-2 bg-slate-800 rounded-sm" />
-                <span className="text-[10px] uppercase font-black text-text-muted">Suci</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 bg-red-600 rounded-sm" />
-                <span className="text-[10px] uppercase font-black text-text-muted">Berdarah</span>
-            </div>
-            <p className="text-[10px] text-text-main italic w-full text-center mt-2 leading-relaxed">
-                <span className="text-accent font-black">Cara Cepat:</span> Tap satu tanggal sebagai awal, lalu tap tanggal lain untuk mengisi semua hari di antaranya secara otomatis.
-            </p>
+        <div className="flex flex-wrap gap-4 items-center justify-center p-4 bg-bg-card/50 rounded-2xl border border-border-main/50">
+          <div className="flex items-center gap-1.5 grayscale opacity-50">
+            <div className="w-2.5 h-2.5 bg-slate-800 dark:bg-slate-300 rounded-sm" />
+            <span className="text-[11px] font-bold text-text-muted">Suci</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-2.5 h-2.5 bg-[#B91C1C] rounded-sm" />
+            <span className="text-[11px] font-bold text-text-muted">Berdarah</span>
+          </div>
+          <p className="text-[11px] text-text-main italic w-full text-center mt-2 leading-relaxed">
+            <span className="text-accent font-bold">Petunjuk Cepat:</span> Tap satu tanggal sebagai awal, lalu tap tanggal lain untuk mengisi rentang hari di antaranya secara otomatis.
+          </p>
         </div>
 
         {selectedDate && activeRecord && (
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="p-6 bg-bg-card rounded-xl border border-border-main space-y-6"
+            className="p-6 bg-bg-card rounded-2xl border border-border-main space-y-6 shadow-[0_4px_16px_rgba(0,0,0,0.04)]"
           >
-            <div className="flex justify-between items-center border-b border-border-main pb-4">
-              <h3 className="text-base font-black uppercase tracking-widest text-accent font-display">
-                Detail Karakteristik: {format(selectedDate, 'd MMMM yyyy', { locale: id })}
+            <div className="flex justify-between items-center border-b border-border-main/50 pb-4">
+              <h3 className="text-sm font-bold text-accent font-display">
+                Karakteristik Darah: {format(selectedDate, 'd MMMM yyyy', { locale: id })}
               </h3>
-              <button onClick={() => setSelectedDate(null)} className="text-xs uppercase font-black text-text-muted hover:text-accent cursor-pointer transition-colors">Tutup</button>
+              <button 
+                type="button"
+                onClick={() => setSelectedDate(null)} 
+                className="text-xs font-semibold text-text-muted hover:text-accent cursor-pointer transition-colors"
+              >
+                Tutup
+              </button>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              <div className="space-y-3">
-                <label className="text-xs font-black uppercase text-text-main">Warna (Hierarki Tamyiz)</label>
-                <select 
-                  className="w-full bg-bg-main border border-border-main p-3 rounded-xl text-xs text-text-contrast font-bold focus:outline-none focus:border-accent"
-                  value={activeRecord?.color}
-                  onChange={(e) => updateDayRecord(selectedDate, { color: e.target.value as BloodColor })}
-                >
-                  <option value="hitam" className="text-text-contrast bg-bg-card">Hitam (Paling Kuat)</option>
-                  <option value="merah" className="text-text-contrast bg-bg-card">Merah</option>
-                  <option value="coklat" className="text-text-contrast bg-bg-card">Coklat</option>
-                  <option value="kuning" className="text-text-contrast bg-bg-card">Kuning</option>
-                  <option value="keruh" className="text-text-contrast bg-bg-card">Keruh (Paling Lemah)</option>
-                </select>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-text-main">Warna (Hierarki Tamyiz)</label>
+                <div className="relative">
+                  <select 
+                    className="w-full bg-bg-main border border-border-main/80 p-3 rounded-xl text-xs text-text-contrast font-semibold focus:outline-none focus:border-accent"
+                    value={activeRecord?.color}
+                    onChange={(e) => updateDayRecord(selectedDate, { color: e.target.value as BloodColor })}
+                  >
+                    <option value="hitam" className="text-text-contrast bg-bg-card">Hitam (Paling Kuat)</option>
+                    <option value="merah" className="text-text-contrast bg-bg-card">Merah</option>
+                    <option value="coklat" className="text-text-contrast bg-bg-card">Coklat</option>
+                    <option value="kuning" className="text-text-contrast bg-bg-card">Kuning</option>
+                    <option value="keruh" className="text-text-contrast bg-bg-card">Keruh (Paling Lemah)</option>
+                  </select>
+                </div>
               </div>
-              <div className="space-y-3">
-                <label className="text-xs font-black uppercase text-text-main">Tekstur</label>
-                <select 
-                  className="w-full bg-bg-main border border-border-main p-3 rounded-xl text-xs text-text-contrast font-bold focus:outline-none focus:border-accent"
-                  value={activeRecord?.texture}
-                  onChange={(e) => updateDayRecord(selectedDate, { texture: e.target.value as BloodTexture })}
-                >
-                  <option value="kental" className="text-text-contrast bg-bg-card">Kental (Lebih Kuat)</option>
-                  <option value="cair" className="text-text-contrast bg-bg-card">Cair</option>
-                </select>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-text-main">Tekstur Darah</label>
+                <div className="relative">
+                  <select 
+                    className="w-full bg-bg-main border border-border-main/80 p-3 rounded-xl text-xs text-text-contrast font-semibold focus:outline-none focus:border-accent"
+                    value={activeRecord?.texture}
+                    onChange={(e) => updateDayRecord(selectedDate, { texture: e.target.value as BloodTexture })}
+                  >
+                    <option value="kental" className="text-text-contrast bg-bg-card">Kental (Lebih Kuat)</option>
+                    <option value="cair" className="text-text-contrast bg-bg-card">Cair</option>
+                  </select>
+                </div>
               </div>
-              <div className="space-y-3">
-                <label className="text-xs font-black uppercase text-text-main">Aroma</label>
-                <select 
-                  className="w-full bg-bg-main border border-border-main p-3 rounded-xl text-xs text-text-contrast font-bold focus:outline-none focus:border-accent"
-                  value={activeRecord?.aroma}
-                  onChange={(e) => updateDayRecord(selectedDate, { aroma: e.target.value as BloodAroma })}
-                >
-                  <option value="busuk" className="text-text-contrast bg-bg-card">Beraroma Busuk (Kuat)</option>
-                  <option value="tidak_busuk" className="text-text-contrast bg-bg-card">Tidak Beraroma</option>
-                </select>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-text-main">Aroma Darah</label>
+                <div className="relative">
+                  <select 
+                    className="w-full bg-bg-main border border-border-main/80 p-3 rounded-xl text-xs text-text-contrast font-semibold focus:outline-none focus:border-accent"
+                    value={activeRecord?.aroma}
+                    onChange={(e) => updateDayRecord(selectedDate, { aroma: e.target.value as BloodAroma })}
+                  >
+                    <option value="busuk" className="text-text-contrast bg-bg-card">Sangat Busuk (Kuat)</option>
+                    <option value="tidak_busuk" className="text-text-contrast bg-bg-card">Tidak Beraroma</option>
+                  </select>
+                </div>
               </div>
             </div>
 
-            <div className="pt-6 border-t border-border-main/50 space-y-4">
+            <div className="pt-5 border-t border-border-main/50 space-y-4">
               <div className="flex items-center gap-2 mb-1">
-                <Clock className="w-4.5 h-4.5 text-accent" />
-                <h4 className="text-xs font-black uppercase tracking-widest text-text-contrast font-display">
-                  Durasi Mengeluarkan Darah
+                <Clock className="w-4 h-4 text-accent" />
+                <h4 className="text-xs font-bold text-text-contrast font-display">
+                  Durasi Mengeluarkan Darah Hari Ini
                 </h4>
               </div>
-              <p className="text-[10px] text-text-muted leading-relaxed font-bold">
-                Masukkan jam dan menit keluarnya darah pada tanggal ini untuk kasus pendarahan yang terputus-putus. Standar penuh adalah 24 jam.
+              <p className="text-xs text-text-muted leading-relaxed font-medium">
+                Sebutkan jumlah jam pendarahan pada tanggal ini jika pendarahan terputus-putus atau kurang dari seharian penuh.
               </p>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-                <div className="space-y-3">
-                  <label className="text-xs font-black uppercase text-text-main">
-                    Jumlah Jam
-                  </label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-text-main">Jumlah Jam</label>
                   <select 
-                    className="w-full bg-bg-main border border-border-main p-3 rounded-xl text-xs text-text-contrast font-bold focus:outline-none focus:border-accent"
+                    className="w-full bg-bg-main border border-border-main/80 p-3 rounded-xl text-xs text-text-contrast font-semibold focus:outline-none focus:border-accent"
                     value={activeRecord?.durationHours !== undefined ? activeRecord.durationHours : 24}
                     onChange={(e) => updateDayRecord(selectedDate, { durationHours: Number(e.target.value) })}
                   >
                     {Array.from({ length: 25 }, (_, i) => (
-                      <option key={i} value={i} className="text-text-contrast bg-bg-card font-bold">
-                        {i} Jam {i === 24 ? "(Standar Penuh)" : ""}
+                      <option key={i} value={i} className="text-text-contrast bg-bg-card">
+                        {i} Jam {i === 24 ? "(Standar 24 Jam Penuh)" : ""}
                       </option>
                     ))}
                   </select>
                 </div>
 
-                <div className="space-y-3">
-                  <label className="text-xs font-black uppercase text-text-main">
-                    Jumlah Menit
-                  </label>
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-text-main">Jumlah Menit</label>
                   <select 
-                    className="w-full bg-bg-main border border-border-main p-3 rounded-xl text-xs text-text-contrast font-bold focus:outline-none focus:border-accent"
+                    className="w-full bg-bg-main border border-border-main/80 p-3 rounded-xl text-xs text-text-contrast font-semibold focus:outline-none focus:border-accent"
                     value={activeRecord?.durationMinutes !== undefined ? activeRecord.durationMinutes : 0}
                     onChange={(e) => updateDayRecord(selectedDate, { durationMinutes: Number(e.target.value) })}
                   >
                     {Array.from({ length: 60 }, (_, i) => (
-                      <option key={i} value={i} className="text-text-contrast bg-bg-card font-bold">
+                      <option key={i} value={i} className="text-text-contrast bg-bg-card">
                         {i} Menit
                       </option>
                     ))}
@@ -737,30 +1078,32 @@ export default function App() {
         // Pengecualian Khusus Nifas (Golongan N2): 
         // Tidak tanya Adat Nifas, TAPI wajib tanya Riwayat Haidl (Pernah Haid / Belum Pernah)
         return (
-          <div className="space-y-8">
+          <div className="space-y-6">
             {renderDetectionBanner()}
-            <div className="space-y-6 p-6 bg-accent/5 border border-border-main rounded-2xl shadow-sm">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-accent flex items-center gap-2 font-display">
-                <Droplet className="w-4 h-4" /> Riwayat Adat Haidl (Mustahadloh Nifas)
+            <div className="space-y-6 p-6 bg-white dark:bg-bg-card border border-border-main/60 rounded-2xl shadow-[0_4px_16px_rgba(0,0,0,0.03)]">
+              <h3 className="text-sm font-bold text-accent flex items-center gap-2 font-display">
+                <Droplet className="w-4.5 h-4.5" /> Riwayat Adat Haid (Mustahadloh Nifas)
               </h3>
               
               <div className="space-y-4">
-                <p className="text-[10px] text-text-muted uppercase font-black">Apakah Anda sudah pernah mengalami Haidl sebelumnya?</p>
+                <p className="text-xs font-semibold text-text-main">Apakah Anda sudah pernah mengalami haid sebelumnya?</p>
                 <div className="flex gap-4">
                   <button 
+                    type="button"
                     onClick={() => setHabit({...habit, pernahHaid: false})}
                     className={cn(
-                      "flex-1 py-3 px-4 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
-                      habit.pernahHaid === false ? "bg-accent/15 text-accent border-accent/40 shadow-sm" : "bg-bg-card text-text-muted border-border-main hover:border-accent/30"
+                      "flex-1 py-3 px-4 rounded-xl border text-xs font-semibold transition-all active:scale-98 cursor-pointer",
+                      habit.pernahHaid === false ? "bg-accent/10 text-accent border-accent/40 shadow-sm" : "bg-bg-main text-text-muted border-border-main hover:bg-neutral-50"
                     )}
                   >
                     Belum Pernah
                   </button>
                   <button 
+                    type="button"
                     onClick={() => setHabit({...habit, pernahHaid: true})}
                     className={cn(
-                      "flex-1 py-3 px-4 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
-                      habit.pernahHaid === true ? "bg-accent text-white dark:text-bg-main border-accent shadow-sm" : "bg-bg-card text-text-muted border-border-main hover:border-accent/30"
+                      "flex-1 py-3 px-4 rounded-xl border text-xs font-semibold transition-all active:scale-98 cursor-pointer",
+                      habit.pernahHaid === true ? "bg-accent text-white border-accent shadow-sm" : "bg-bg-main text-text-muted border-border-main hover:bg-neutral-50"
                     )}
                   >
                     Sudah Pernah
@@ -769,29 +1112,31 @@ export default function App() {
               </div>
 
               {habit.pernahHaid && (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-3">
-                    <label className="text-xs font-black uppercase text-text-muted">Kebiasaan Haidl (Hari)</label>
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                  <div className="space-y-2 relative">
                     <input 
                       type="number" 
+                      id="durationHaidIn"
                       value={habit.duration || ''}
                       onChange={e => {
                         const val = parseInt(e.target.value) || 0;
                         setHabit({ ...habit, duration: val, durations: [val] });
                       }}
-                      className="w-full bg-bg-card border border-border-main p-4 rounded-xl text-xl text-text-contrast focus:outline-none focus:border-accent text-center font-bold"
-                      placeholder="7"
+                      className="peer w-full bg-transparent border-b border-border-main p-3 text-[15px] text-text-contrast focus:outline-none focus:border-accent transition-colors pt-6"
+                      placeholder=" "
                     />
+                    <label htmlFor="durationHaidIn" className="absolute left-0 top-1.5 text-xs text-text-muted transition-all peer-placeholder-shown:text-sm peer-placeholder-shown:top-5 peer-focus:top-1.5 peer-focus:text-xs peer-focus:text-accent font-medium">Kebiasaan Haid (Hari)</label>
                   </div>
-                  <div className="space-y-3">
-                    <label className="text-xs font-black uppercase text-text-muted">Kebiasaan Suci (Hari)</label>
+                  <div className="space-y-2 relative">
                     <input 
                       type="number" 
+                      id="habitSuciIn"
                       value={habit.habitSuci || ''}
                       onChange={e => setHabit({...habit, habitSuci: parseInt(e.target.value) || 0})}
-                      className="w-full bg-bg-card border border-border-main p-4 rounded-xl text-xl text-text-contrast focus:outline-none focus:border-accent text-center font-bold"
-                      placeholder="25"
+                      className="peer w-full bg-transparent border-b border-border-main p-3 text-[15px] text-text-contrast focus:outline-none focus:border-accent transition-colors pt-6"
+                      placeholder=" "
                     />
+                    <label htmlFor="habitSuciIn" className="absolute left-0 top-1.5 text-xs text-text-muted transition-all peer-placeholder-shown:text-sm peer-placeholder-shown:top-5 peer-focus:top-1.5 peer-focus:text-xs peer-focus:text-accent font-medium">Kebiasaan Suci (Hari)</label>
                   </div>
                 </motion.div>
               )}
@@ -801,15 +1146,15 @@ export default function App() {
       }
       
       return (
-        <div className="space-y-8">
+        <div className="space-y-6">
           {renderDetectionBanner()}
-          <div className="py-20 text-center space-y-4">
-            <div className="w-20 h-20 rounded-full bg-slate-800/30 flex items-center justify-center text-slate-500 mx-auto">
-              <CheckCircle2 className="w-10 h-10" />
+          <div className="py-12 text-center space-y-4 bg-white dark:bg-bg-card p-8 rounded-2xl border border-border-main/50 shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
+            <div className="w-16 h-16 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center text-accent mx-auto">
+              <CheckCircle2 className="w-8 h-8" />
             </div>
-            <p className="text-sm font-black uppercase tracking-widest text-slate-500">Status: Mubtadi'ah</p>
-            <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
-              Sebagai pemula yang baru pertama kali mengalami haid, Anda tidak memiliki riwayat adat untuk diinput. Silakan lanjut ke tahap berikutnya.
+            <p className="text-sm font-bold text-text-contrast">Mubtadi'ah (Pemula)</p>
+            <p className="text-xs text-text-muted max-w-sm mx-auto leading-relaxed">
+              Sebagai wanita yang baru pertama kali mengalami haid dan darah keluar berlebih, Anda tidak perlu menginput data riwayat adat sebelumnya. Silakan langsung lanjutkan ke langkah transisi waktu.
             </p>
           </div>
         </div>
@@ -820,22 +1165,20 @@ export default function App() {
     // Kondisi 2A: Terdeteksi MUMAYYIZAH (isMumayyizah === true)
     if (isMumayyizah) {
       return (
-        <div className="space-y-8">
+        <div className="space-y-6">
           {renderDetectionBanner()}
           <div className="space-y-6">
             <div className="p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">
-              <p className="text-xs text-slate-400 leading-relaxed italic">
-                Karena darah Anda memiliki **Tamyiz**, hukum memprioritaskan karakter darah daripada kebiasaan. Input angka ini hanya sebagai cadangan apabila syarat Tamyiz nantinya gagal.
+              <p className="text-xs text-text-muted leading-relaxed italic">
+                Sebab darah Anda terdeteksi memiliki hukum **Tamyiz**, aplikasi akan mengutamakan karakteristik darah Anda di atas kebiasaan lama. Pengisian kolom di bawah ini berguna sebagai referensi jika syarat Tamyiz Anda batal di rincian fikih.
               </p>
             </div>
 
-            <div className={cn("grid gap-6", context === 'nifas' ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1")}>
-              <div className="space-y-4">
-                <h3 className="text-[10px] font-black uppercase text-slate-500 tracking-widest">
-                  Durasi Kebiasaan {context === 'nifas' ? 'Nifas' : 'Haid'} (Hari)
-                </h3>
+            <div className={cn("grid gap-8 bg-white dark:bg-bg-card p-6 rounded-2xl border border-border-main/50 shadow-sm", context === 'nifas' ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1")}>
+              <div className="space-y-2 relative">
                 <input 
                   type="number" 
+                  id="durationAdaIn"
                   value={(context === 'nifas' ? habit.durationNifas : habit.duration) || ''}
                   onChange={e => {
                     const val = parseInt(e.target.value) || 0;
@@ -845,21 +1188,23 @@ export default function App() {
                       setHabit({...habit, duration: val, durations: [val], retrospection: 'ingat_durasi'});
                     }
                   }}
-                  className="w-full bg-bg-card border border-border-main p-6 rounded-2xl text-3xl font-black text-center text-text-contrast focus:outline-none focus:border-accent"
-                  placeholder="Contoh: 7"
+                  className="peer w-full bg-transparent border-b border-border-main p-3 text-[15px] text-text-contrast focus:outline-none focus:border-accent transition-colors pt-6"
+                  placeholder=" "
                 />
+                <label htmlFor="durationAdaIn" className="absolute left-0 top-1.5 text-xs text-text-muted transition-all peer-placeholder-shown:text-sm peer-placeholder-shown:top-5 peer-focus:top-1.5 peer-focus:text-xs peer-focus:text-accent font-medium">Durasi Kebiasaan {context === 'nifas' ? 'Nifas' : 'Haid'} (Hari)</label>
               </div>
 
               {context === 'nifas' && (
-                <div className="space-y-4">
-                  <h3 className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Durasi Kebiasaan Haid (Hari)</h3>
+                <div className="space-y-2 relative">
                   <input 
                     type="number" 
+                    id="durationAdaHaidIn"
                     value={habit.duration || ''}
                     onChange={e => setHabit({...habit, duration: parseInt(e.target.value) || 0, durations: [parseInt(e.target.value) || 0]})}
-                    className="w-full bg-bg-card border border-border-main p-6 rounded-2xl text-3xl font-black text-center text-text-contrast focus:outline-none focus:border-accent"
-                    placeholder="Contoh: 7"
+                    className="peer w-full bg-transparent border-b border-border-main p-3 text-[15px] text-text-contrast focus:outline-none focus:border-accent transition-colors pt-6"
+                    placeholder=" "
                   />
+                  <label htmlFor="durationAdaHaidIn" className="absolute left-0 top-1.5 text-xs text-text-muted transition-all peer-placeholder-shown:text-sm peer-placeholder-shown:top-5 peer-focus:top-1.5 peer-focus:text-xs peer-focus:text-accent font-medium">Durasi Kebiasaan Haid (Hari)</label>
                 </div>
               )}
             </div>
@@ -877,29 +1222,30 @@ export default function App() {
       ];
 
       return (
-        <div className="space-y-8">
+        <div className="space-y-6">
           {renderDetectionBanner()}
-          <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl mb-4 text-center">
-            <p className="text-xs text-slate-400 leading-relaxed italic">
-              Karena Anda **gagal Tamyiz** (darah satu warna), hukum mutlak dikembalikan kepada detail ingatan kebiasaan Anda sebelumnya.
+          <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl text-center">
+            <p className="text-xs text-text-muted leading-relaxed">
+              Sebab kondisi darah Anda **gagal Tamyiz** (warna seragam), aplikasi bergantung sepenuhnya pada rujukan kebiasaan masa lalu Anda.
             </p>
           </div>
           
-          <div className="space-y-6 p-6 bg-accent/5 border border-border-main rounded-2xl shadow-sm">
-            <h3 className="text-sm font-black uppercase tracking-widest text-accent flex items-center gap-2 font-display">
-              <History className="w-4 h-4" /> Riwayat Adat Nifas (Persalinan Sebelumnya)
+          <div className="space-y-6 p-6 bg-white dark:bg-bg-card border border-border-main/50 rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
+            <h3 className="text-sm font-bold text-accent flex items-center gap-2 font-display">
+              <History className="w-4.5 h-4.5" /> Riwayat Adat Nifas (Persalinan Sebelumnya)
             </h3>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
               {nifasRetrospectionOptions.map((item) => (
                 <button
+                  type="button"
                   key={item.id}
                   onClick={() => setHabit({...habit, retrospection: item.id as any})}
-                     className={cn(
-                      "py-3 px-4 rounded-xl border text-xs font-black uppercase tracking-wider transition-all text-left cursor-pointer",
+                  className={cn(
+                    "py-3.5 px-4 rounded-xl border text-xs font-semibold transition-all text-left cursor-pointer active:scale-98",
                     habit.retrospection === item.id 
-                      ? "bg-accent text-white dark:text-bg-main border-accent shadow-lg shadow-accent/20" 
-                      : "bg-bg-card text-text-muted border-border-main hover:border-accent/40 hover:text-text-main"
+                      ? "bg-[#FFF5F5] text-accent border-accent/40 shadow-sm font-bold" 
+                      : "bg-bg-main text-text-muted border-border-main hover:bg-neutral-50 hover:text-text-main"
                   )}
                 >
                   {item.label}
@@ -908,33 +1254,31 @@ export default function App() {
             </div>
 
             {habit.retrospection !== 'lupa_semua' && habit.retrospection !== 'ingat_waktu' && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-                <div className="flex justify-between items-end">
-                  <p className="text-xs text-text-muted uppercase font-black">Durasi Nifas (Hari)</p>
-                  <p className="text-[9px] text-text-muted italic">Satu kali nifas sudah bisa jadi pedoman.</p>
-                </div>
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-2 relative pt-2">
                 <input 
                   type="text" 
-                  placeholder="Contoh: 40, 45  atau  40"
+                  id="durNifasArr"
+                  placeholder=" "
                   value={habit.durationsNifas?.join(', ') || ''}
                   onChange={e => {
                     const val = e.target.value;
                     const nums = val.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
                     setHabit({ ...habit, durationsNifas: nums, durationNifas: nums[nums.length - 1] });
                   }}
-                  className="w-full bg-bg-card border border-border-main p-4 rounded-xl text-lg text-text-contrast focus:outline-none focus:border-accent font-bold"
+                  className="peer w-full bg-transparent border-b border-border-main p-3 text-[15px] text-text-contrast focus:outline-none focus:border-accent transition-colors pt-6"
                 />
+                <label htmlFor="durNifasArr" className="absolute left-0 top-1.5 text-xs text-text-muted transition-all peer-placeholder-shown:text-sm peer-placeholder-shown:top-5 peer-focus:top-1.5 peer-focus:text-xs peer-focus:text-accent font-medium">Durasi Nifas (Hari / Isikan Berurutan Jika Berubah-ubah)</label>
               </motion.div>
             )}
 
             {habit.retrospection === 'ingat_waktu' && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-4 bg-accent/10 border border-accent/20 rounded-xl space-y-3">
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-4 bg-accent/5 border border-accent/20 rounded-xl space-y-3">
                 <div className="flex gap-3">
                   <Clock className="w-4 h-4 text-accent mt-0.5" />
                   <div>
-                    <p className="text-[11px] font-bold text-accent uppercase tracking-widest">Hanya Ingat Waktu Mulai (N7)</p>
-                    <p className="text-[10px] text-text-muted italic mt-1 leading-relaxed">
-                      Hari Pertama (Waktu Mulai) dihukumi YAKIN NIFAS. Hari ke-2 sampai ke-60 dihukumi IHTIYATH.
+                    <p className="text-xs font-bold text-accent">Hanya Ingat Waktu Mulai (N7)</p>
+                    <p className="text-[11px] text-text-muted mt-1 leading-relaxed">
+                      Hari pertama dihukumi Yakin Nifas. Hari ke-2 sampai ke-60 dihukumi Ihtiyath (berhati-hati).
                     </p>
                   </div>
                 </div>
@@ -943,33 +1287,35 @@ export default function App() {
           </div>
 
           {habit.pernahHaid && (
-            <div className="space-y-6 p-6 bg-accent/5 border border-border-main rounded-2xl shadow-sm">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-accent flex items-center gap-2 font-display">
-                <Droplet className="w-4 h-4" /> Riwayat Adat Haidl (Siklus Normal Anda)
+            <div className="space-y-6 p-6 bg-white dark:bg-bg-card border border-border-main/50 rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
+              <h3 className="text-sm font-bold text-accent flex items-center gap-2 font-display">
+                <Droplet className="w-4.5 h-4.5" /> Riwayat Adat Haid (Siklus Normal Anda)
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-3">
-                  <label className="text-xs font-black uppercase text-text-muted">Kebiasaan Haidl (Hari)</label>
+                <div className="space-y-2 relative">
                   <input 
                     type="number" 
+                    id="durHaidNifasIn"
                     value={habit.duration || ''}
                     onChange={e => {
                       const val = parseInt(e.target.value) || 0;
                       setHabit({ ...habit, duration: val, durations: [val] });
                     }}
-                    className="w-full bg-bg-card border border-border-main p-4 rounded-xl text-lg text-text-contrast focus:outline-none focus:border-accent text-center font-bold"
-                    placeholder="7"
+                    className="peer w-full bg-transparent border-b border-border-main p-3 text-[15px] text-text-contrast focus:outline-none focus:border-accent transition-colors pt-6"
+                    placeholder=" "
                   />
+                  <label htmlFor="durHaidNifasIn" className="absolute left-0 top-1.5 text-xs text-text-muted transition-all peer-placeholder-shown:text-sm peer-placeholder-shown:top-5 peer-focus:top-1.5 peer-focus:text-xs peer-focus:text-accent font-medium">Kebiasaan Haid (Hari)</label>
                 </div>
-                <div className="space-y-3">
-                  <label className="text-xs font-black uppercase text-text-muted">Kebiasaan Suci (Hari)</label>
+                <div className="space-y-2 relative">
                   <input 
                     type="number" 
+                    id="suciHaidNifasIn"
                     value={habit.habitSuci || ''}
                     onChange={e => setHabit({...habit, habitSuci: parseInt(e.target.value) || 0})}
-                    className="w-full bg-bg-card border border-blue-900/30 p-4 rounded-xl text-xl text-blue-400 focus:outline-none focus:border-blue-500 text-center"
-                    placeholder="Contoh: 25"
+                    className="peer w-full bg-transparent border-b border-border-main p-3 text-[15px] text-text-contrast focus:outline-none focus:border-accent transition-colors pt-6"
+                    placeholder=" "
                   />
+                  <label htmlFor="suciHaidNifasIn" className="absolute left-0 top-1.5 text-xs text-text-muted transition-all peer-placeholder-shown:text-sm peer-placeholder-shown:top-5 peer-focus:top-1.5 peer-focus:text-xs peer-focus:text-accent font-medium">Kebiasaan Suci (Hari)</label>
                 </div>
               </div>
             </div>
@@ -980,48 +1326,50 @@ export default function App() {
 
     if (!habit.habitType) {
       return (
-        <div className="space-y-6 md:space-y-8">
+        <div className="space-y-6">
           {renderDetectionBanner()}
-          <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl mb-4 text-center">
-            <p className="text-xs text-slate-400 leading-relaxed italic">
-              Karena Anda **gagal Tamyiz** (darah satu warna), hukum mutlak dikembalikan kepada detail ingatan kebiasaan Anda sebelumnya.
+          <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl text-center">
+            <p className="text-xs text-text-muted leading-relaxed">
+              Sebab kondisi darah Anda **gagal Tamyiz** (warna seragam), aplikasi bergantung sepenuhnya pada rujukan kebiasaan masa lalu Anda.
             </p>
           </div>
-          <div className="space-y-4 text-center py-10">
-            <h3 className="text-base font-black uppercase tracking-widest text-slate-500 mb-2">Sifat Kebiasaan Haid</h3>
-            <p className="text-[10px] text-slate-500 italic max-w-lg mx-auto mb-8">
-              Catatan: Adat haidl yang dijadikan acuan bisa diambil dari kebiasaan haidl yang normal, maupun dari pengadatan haidl lewat tamyiz pada bulan-bulan sebelumnya.
+          <div className="space-y-4 text-center py-6">
+            <h3 className="text-sm font-bold text-text-contrast">Sifat Kebiasaan Haid</h3>
+            <p className="text-[11px] text-text-muted max-w-sm mx-auto leading-relaxed">
+              Catatan: Adat haid yang dijadikan acuan bisa diambil dari kebiasaan haid normal, ataupun dari pengadatan haid lewat tamyiz pada bulan sebelumnya.
             </p>
-            <p className="text-slate-400 text-sm mb-12">Apakah durasi kebiasaan haidl Anda sebelumnya selalu tetap (sama) atau berubah-ubah?</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto">
+            <p className="text-text-main text-xs pt-4 pb-2">Apakah durasi kebiasaan haid Anda sebelumnya selalu tetap (sama) atau berubah-ubah?</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-md mx-auto pt-2">
               <button 
+                type="button"
                 onClick={() => {
                   setHabit({ ...habit, habitType: 'TETAP' });
                   setAdatInput(habit.duration ? habit.duration.toString() : '');
                 }}
-                className="p-8 rounded-2xl border-2 border-border-main bg-bg-card hover:border-emerald-500/50 hover:bg-emerald-500/5 transition-all group flex flex-col items-center gap-4"
+                className="p-6 rounded-2xl border border-border-main/60 bg-white dark:bg-bg-card hover:border-accent hover:bg-[#FFF5F5] dark:hover:bg-accent/10 transition-all group flex flex-col items-center gap-3 active:scale-98 cursor-pointer shadow-[0_2px_10px_rgba(0,0,0,0.02)]"
               >
-                <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-500 group-hover:scale-110 transition-transform">
-                  <CheckCircle2 className="w-6 h-6" />
+                <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center text-accent group-hover:scale-105 transition-transform">
+                  <CheckCircle2 className="w-5 h-5" />
                 </div>
-                <div className="text-left text-center">
-                  <div className="text-xs font-bold uppercase tracking-widest text-emerald-500">Adat Tetap</div>
-                  <div className="text-[10px] text-slate-500 mt-1 uppercase">Tidak Berubah</div>
+                <div className="text-center">
+                  <div className="text-xs font-semibold text-text-contrast">Adat Tetap</div>
+                  <div className="text-[10px] text-text-muted mt-1">Sama Setiap Bulan</div>
                 </div>
               </button>
               <button 
+                type="button"
                 onClick={() => {
                   setHabit({ ...habit, habitType: 'BERUBAH' });
                   setAdatInput(habit.durations ? habit.durations.join(', ') : '');
                 }}
-                className="p-8 rounded-2xl border-2 border-border-main bg-bg-card hover:border-amber-500/50 hover:bg-amber-500/5 transition-all group flex flex-col items-center gap-4"
+                className="p-6 rounded-2xl border border-border-main/60 bg-white dark:bg-bg-card hover:border-accent hover:bg-[#FFF5F5] dark:hover:bg-accent/10 transition-all group flex flex-col items-center gap-3 active:scale-98 cursor-pointer shadow-[0_2px_10px_rgba(0,0,0,0.02)]"
               >
-                <div className="w-12 h-12 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-500 group-hover:scale-110 transition-transform">
-                  <RefreshCw className="w-6 h-6" />
+                <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center text-accent group-hover:scale-105 transition-transform">
+                  <RefreshCw className="w-5 h-5 animate-spin-slow" />
                 </div>
-                <div className="text-left text-center">
-                  <div className="text-xs font-bold uppercase tracking-widest text-amber-500">Adat Berubah</div>
-                  <div className="text-[10px] text-slate-500 mt-1 uppercase">Berubah-ubah</div>
+                <div className="text-center">
+                  <div className="text-xs font-semibold text-text-contrast">Adat Berubah</div>
+                  <div className="text-[10px] text-text-muted mt-1">Berubah-ubah / Siklus Putaran</div>
                 </div>
               </button>
             </div>
@@ -1040,7 +1388,7 @@ export default function App() {
           { 
             id: 'ingat_durasi', 
             label: 'Hanya Ingat Durasi',
-            desc: 'Anda ingat jumlah harinya (misal: 7 hari), tapi lupa jam atau tanggal mulainya.' 
+            desc: 'Anda ingat jumlah harinya (misal: 7 haid), tapi lupa jam atau tanggal mulainya.' 
           },
           { 
             id: 'ingat_waktu', 
@@ -1075,66 +1423,68 @@ export default function App() {
         ];
 
     return (
-      <div className="space-y-6 md:space-y-8">
+      <div className="space-y-6">
         {renderDetectionBanner()}
-        <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl mb-4 text-center">
-          <p className="text-xs text-slate-400 leading-relaxed italic">
+        <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl text-center">
+          <p className="text-xs text-text-muted leading-relaxed">
             Karena Anda **gagal Tamyiz** (darah satu warna), hukum mutlak dikembalikan kepada detail ingatan kebiasaan Anda sebelumnya.
           </p>
         </div>
         <div className="flex items-center justify-between">
           <button 
+            type="button"
             onClick={() => setHabit({ ...habit, habitType: undefined, retrospection: 'ingat_semua', lupaUrutan: false })}
-            className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-text-contrast transition-colors"
+            className="flex items-center gap-1.5 text-xs font-semibold text-text-muted hover:text-accent transition-colors"
           >
-            <ChevronLeft className="w-3 h-3" /> Kembali ke Pilihan Sifat Adat
+            <ChevronLeft className="w-4 h-4" /> Kembali Pilihan Sifat
           </button>
           
           <div className="group relative">
-            <Info className="w-4 h-4 text-slate-500 cursor-help" />
-            <div className="absolute right-0 bottom-full mb-2 w-64 p-3 bg-bg-side border border-border-main rounded-lg text-[10px] text-slate-400 italic shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
-              Catatan: Adat haidl yang dijadikan acuan bisa diambil dari kebiasaan haidl yang normal, maupun dari pengadatan haidl lewat tamyiz pada bulan-bulan sebelumnya.
+            <Info className="w-4 h-4 text-text-muted cursor-help" />
+            <div className="absolute right-0 bottom-full mb-2 w-64 p-3 bg-bg-card border border-border-main rounded-xl text-[11px] text-text-muted italic shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+              Catatan: Adat haid yang dijadikan acuan bisa diambil dari kebiasaan haid normal, maupun dari pengadatan haid lewat tamyiz pada bulan sebelumnya.
             </div>
           </div>
         </div>
 
         <div className="space-y-4">
-          <h3 className="text-sm font-black uppercase tracking-widest text-slate-500 flex items-center justify-between">
-            <span>Retrospeksi Ingatan</span>
+          <h3 className="text-xs font-bold text-text-muted flex items-center justify-between">
+            <span>Retrospeksi Ingatan Anda</span>
             <span className={cn(
-              "text-[10px] px-2 py-0.5 rounded border",
-              habit.habitType === 'TETAP' ? "border-emerald-500/30 text-emerald-500 bg-emerald-500/10" : "border-amber-500/30 text-amber-400 bg-amber-500/10"
+              "text-[10px] px-2.5 py-0.5 rounded-full border font-bold",
+              habit.habitType === 'TETAP' ? "border-[#B91C1C]/25 text-[#B91C1C] bg-[#FFF5F5]" : "border-amber-500/30 text-amber-500 bg-amber-500/5"
             )}>
-              Adat {habit.habitType}
+              Adat {habit.habitType === 'TETAP' ? 'Tetap' : 'Berubah'}
             </span>
           </h3>
-          <div className="grid grid-cols-1 gap-3 md:gap-4">
+          <div className="grid grid-cols-1 gap-3">
             {retrospectionOptions.map((item) => (
               <button
+                type="button"
                 key={item.id}
                 onClick={item.onClick || (() => {
                   setHabit({ ...habit, retrospection: item.id as any });
                   setAdatInput('');
                 })}
                 className={cn(
-                  "p-5 md:p-6 rounded-xl border border-border-main text-left transition-all flex flex-col gap-1",
-                  habit.retrospection === item.id ? "bg-bg-card border-accent text-accent" : "bg-bg-main text-slate-400 hover:border-slate-700 hover:text-text-contrast"
+                  "p-4 rounded-xl border transition-all flex flex-col gap-1 text-left active:scale-99 cursor-pointer shadow-[0_2px_8px_rgba(0,0,0,0.01)]",
+                  habit.retrospection === item.id 
+                    ? "bg-[#FFF5F5] dark:bg-accent/10 border-accent text-accent" 
+                    : "bg-white dark:bg-bg-card text-text-muted border-border-main/50 hover:bg-neutral-50"
                 )}
               >
-                <span className="text-xs font-black uppercase tracking-wider">{item.label}</span>
-                <span className="text-[10px] opacity-65 font-bold leading-relaxed">{item.desc}</span>
+                <span className="text-xs font-bold text-text-contrast">{item.label}</span>
+                <span className="text-[11px] leading-relaxed opacity-85">{item.desc}</span>
               </button>
             ))}
           </div>
 
           {(habit.habitType === 'BERUBAH' && habit.retrospection !== 'lupa_semua') && (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4 mt-8">
-              <h3 className="text-[10px] font-black uppercase text-slate-500 tracking-widest">
-                {habit.retrospection === 'ingat_semua' ? 'Urutan Durasi Haidl (Pisahkan Koma)' : 'Daftar Angka Durasi Haidl (Pisahkan Koma)'}
-              </h3>
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-2 relative pt-4">
               <input 
                 type="text" 
-                placeholder="Contoh: 3, 5, 7"
+                id="durArrayIn"
+                placeholder=" "
                 value={adatInput}
                 onChange={e => {
                   const val = e.target.value;
@@ -1142,95 +1492,102 @@ export default function App() {
                   const nums = val.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
                   setHabit({ ...habit, durations: nums, duration: nums[nums.length - 1] });
                 }}
-                className="w-full bg-bg-card border border-border-main p-4 rounded-xl text-lg text-text-contrast focus:outline-none focus:border-accent"
+                className="peer w-full bg-transparent border-b border-border-main p-3 text-[15px] text-text-contrast focus:outline-none focus:border-accent transition-colors pt-6"
               />
+              <label htmlFor="durArrayIn" className="absolute left-0 top-1.5 text-xs text-text-muted transition-all peer-placeholder-shown:text-sm peer-placeholder-shown:top-5 peer-focus:top-1.5 peer-focus:text-xs peer-focus:text-accent font-medium">
+                {habit.retrospection === 'ingat_semua' ? 'Urutan Durasi Haid (Pisahkan Koma, misal: 3, 5, 7)' : 'Daftar Angka Durasi Haid (Pisahkan Koma, misal: 3, 5, 7)'}
+              </label>
             </motion.div>
           )}
 
           {habit.habitType === 'TETAP' && habit.retrospection === 'ingat_durasi' && (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 mt-8">
-              <div className="space-y-3">
-                <label className="text-[10px] font-bold uppercase text-slate-500 tracking-widest">Durasi Kebiasaan (Hari)</label>
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 pt-4">
+              <div className="space-y-2 relative">
                 <input 
                   type="number" 
+                  id="durTetapIn"
                   value={habit.duration || ''}
                   onChange={e => {
                     const val = parseInt(e.target.value) || 0;
                     setHabit({...habit, duration: val, durations: [val]});
                   }}
-                  className="w-full bg-bg-card border border-border-main p-4 rounded-xl text-lg text-text-contrast focus:outline-none focus:border-accent"
-                  placeholder="Contoh: 7"
+                  className="peer w-full bg-transparent border-b border-border-main p-3 text-[15px] text-text-contrast focus:outline-none focus:border-accent transition-colors pt-6"
+                  placeholder=" "
                 />
+                <label htmlFor="durTetapIn" className="absolute left-0 top-1.5 text-xs text-text-muted transition-all peer-placeholder-shown:text-sm peer-placeholder-shown:top-5 peer-focus:top-1.5 peer-focus:text-xs peer-focus:text-accent font-medium">Durasi Kebiasaan (Hari)</label>
               </div>
-              <div className="space-y-3">
-                <label className="text-[10px] font-bold uppercase text-slate-500 tracking-widest">Hari Yang Diyakini Pasti Suci (Tanggal Masa Adat)</label>
+              <div className="space-y-2 relative">
                 <input 
                   type="number" 
+                  id="knownPureDayIn"
                   value={habit.knownPureDay || ''}
                   onChange={e => setHabit({...habit, knownPureDay: parseInt(e.target.value) || 0})}
-                  className="w-full bg-bg-card border border-border-main p-4 rounded-xl text-lg text-text-contrast focus:outline-none focus:border-accent"
-                  placeholder="Contoh: 10"
+                  className="peer w-full bg-transparent border-b border-border-main p-3 text-[15px] text-text-contrast focus:outline-none focus:border-accent transition-colors pt-6"
+                  placeholder=" "
                 />
-                <p className="text-[10px] text-slate-500 italic">Masukkan tanggal relatif dalam siklus di mana Anda yakin 100% sedang suci (biasanya di luar masa rentang haid Anda).</p>
+                <label htmlFor="knownPureDayIn" className="absolute left-0 top-1.5 text-xs text-text-muted transition-all peer-placeholder-shown:text-sm peer-placeholder-shown:top-5 peer-focus:top-1.5 peer-focus:text-xs peer-focus:text-accent font-medium">Hari Yang Diyakini Pasti Suci (Tanggal Masa Adat, misal: 10)</label>
               </div>
+              <p className="text-[11px] text-text-muted italic">Sebutkan tanggal relatif dalam siklus bulanan Anda di mana Anda yakin 100% sedang berada dalam kondisi suci.</p>
             </motion.div>
           )}
 
           {habit.habitType === 'TETAP' && habit.retrospection === 'ingat_semua' && (
-             <div className="mt-8 space-y-4">
-               <h3 className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Durasi Haidl Kebiasaan (Hari)</h3>
+             <div className="pt-4 space-y-2 relative">
                <input 
                 type="number" 
-                placeholder="Contoh: 7"
+                id="durTetapAllIn"
+                placeholder=" "
                 value={habit.duration || ''}
                 onChange={e => {
                   const val = parseInt(e.target.value) || 0;
                   setHabit({ ...habit, duration: val, durations: [val] });
                 }}
-                className="w-full bg-bg-card border border-border-main p-4 rounded-xl text-lg text-text-contrast focus:outline-none focus:border-accent"
+                className="peer w-full bg-transparent border-b border-border-main p-3 text-[15px] text-text-contrast focus:outline-none focus:border-accent transition-colors pt-6"
               />
+              <label htmlFor="durTetapAllIn" className="absolute left-0 top-1.5 text-xs text-text-muted transition-all peer-placeholder-shown:text-sm peer-placeholder-shown:top-5 peer-focus:top-1.5 peer-focus:text-xs peer-focus:text-accent font-medium">Durasi Haid Kebiasaan (Hari)</label>
              </div>
           )}
 
           {habit.habitType === 'TETAP' && habit.retrospection === 'ingat_waktu' && (
-            <div className="p-4 bg-bg-card border border-accent/20 rounded-xl mt-8">
+            <div className="p-4 bg-white dark:bg-bg-card border border-border-main/50 rounded-xl mt-4 shadow-[0_2px_8px_rgba(0,0,0,0.01)]">
               <div className="flex gap-3">
                 <Info className="w-5 h-5 text-accent shrink-0" />
-                <p className="text-[10px] text-slate-400 leading-relaxed italic">
-                  Anda memilih "**Hanya Ingat Waktu Mulai**". Sistem akan menetapkan hari pertama (D1) pada kalender sebagai masa yakin haidl, dan hari ke-2 s/d 15 sebagai masa **IHTIYATH** (berhati-hati).
+                <p className="text-xs text-text-muted leading-relaxed italic">
+                  Anda memilih "**Hanya Ingat Waktu Mulai**". Aplikasi akan menganggap hari pertama mengalami darah sebagai masa yakin haid, dan hari ke-2 s/d 15 sebagai masa **Ihtiyath** (berhati-hati).
                 </p>
               </div>
             </div>
           )}
 
           {habit.retrospection === 'lupa_semua' && (
-            <div className="space-y-4 mt-8">
-              <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl">
-                <p className="text-[10px] text-amber-500/80 leading-relaxed italic">
-                  Status: **Mutahayyiroh Mutlaqoh**. Karena lupa kadar dan waktu, hukum fikih mewajibkan Anda untuk **IHTIYATH** (berhati-hati) di setiap waktu: Wajib sholat & puasa, tapi juga wajib mandi untuk setiap sholat fardhu.
+            <div className="space-y-4 pt-4">
+              <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl">
+                <p className="text-[11px] text-amber-600 dark:text-amber-400 leading-relaxed font-semibold">
+                  Status: Mutahayyiroh Mutlaqoh. Disebabkan lupa angka dan waktu haid, hukum fikih mewajibkan Anda untuk Ihtiyath (hati-hati) di setiap waktu: wajib shalat/puasa, dan wajib mandi fardhu di setiap waktu shalat.
                 </p>
               </div>
               
               <button 
+                type="button"
                 onClick={() => setHabit({ ...habit, ingatWaktuBerhenti: !habit.ingatWaktuBerhenti })}
                 className={cn(
-                  "w-full flex items-center justify-between p-4 rounded-xl border transition-all",
-                  habit.ingatWaktuBerhenti ? "bg-accent/10 border-accent text-accent" : "bg-bg-card border-border-main text-slate-500"
+                  "w-full flex items-center justify-between p-4 rounded-xl border transition-all active:scale-99 cursor-pointer",
+                  habit.ingatWaktuBerhenti ? "bg-[#FFF5F5] dark:bg-accent/10 border-accent text-accent" : "bg-white dark:bg-bg-card border-border-main/50 text-text-muted"
                 )}
               >
                 <div className="flex items-center gap-3">
                   <Target className="w-5 h-5" />
                   <div className="text-left">
-                    <div className="text-[10px] font-bold uppercase tracking-widest">Ingat Waktu Berhenti?</div>
-                    <div className="text-[9px] lowercase opacity-60">Pilih jika Anda ingat jam biasanya darah berhenti (Inqo')</div>
+                    <div className="text-xs font-bold text-text-contrast">Ingat Waktu Berhenti?</div>
+                    <div className="text-[10px] lowercase text-text-muted mt-1">Pilih jika Anda ingat jam biasanya darah berhenti (Inqo')</div>
                   </div>
                 </div>
                 <div className={cn(
-                  "w-8 h-4 rounded-full relative transition-colors",
-                  habit.ingatWaktuBerhenti ? "bg-accent" : "bg-slate-700"
+                  "w-8 h-4 rounded-full relative transition-colors duration-200",
+                  habit.ingatWaktuBerhenti ? "bg-accent" : "bg-neutral-300 dark:bg-neutral-700"
                 )}>
                   <div className={cn(
-                    "absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform",
+                    "absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-200",
                     habit.ingatWaktuBerhenti ? "translate-x-4" : "translate-x-1"
                   )} />
                 </div>
@@ -1256,109 +1613,130 @@ export default function App() {
     return false;
   }, [context, bleedingRange]);
 
-  const renderStep4 = () => (
-    <div className="space-y-6 md:space-y-8">
-      {showIstihadlohToggle && (
-        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-            <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">Konfigurasi Istihadloh</h3>
+  const renderStep4Redesign = () => (
+    <div className="space-y-6 md:space-y-8 flex flex-col justify-center min-h-[40vh]">
+      <div className="text-center space-y-2">
+        <h2 className="text-lg md:text-xl font-bold text-text-contrast">
+          Konteks Transisi Waktu
+        </h2>
+        <p className="text-xs text-text-muted max-w-md mx-auto leading-relaxed">
+          Penyebutan jam transisi yang tepat sangat krusial untuk mengaudit kewajiban shalat fardhu Anda di batas awal & akhir pendarahan.
+        </p>
+      </div>
+
+      <div className="max-w-2xl mx-auto w-full space-y-6">
+        {/* Istihadloh toggle (conditional) */}
+        {showIstihadlohToggle && (
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+              <h3 className="text-xs font-bold text-text-muted md:text-center">Konfigurasi Istihadlah</h3>
+              
+              <button 
+                  type="button"
+                  onClick={() => setIsFirstMonthIstihadloh(!isFirstMonthIstihadloh)}
+                  className={cn(
+                      "w-full flex items-center gap-3 p-5 rounded-2xl border transition-all active:scale-99 cursor-pointer shadow-[0_2px_10px_rgba(0,0,0,0.01)]",
+                      isFirstMonthIstihadloh 
+                        ? "bg-[#FFF5F5] dark:bg-accent/10 border-accent/60 text-accent font-bold" 
+                        : "bg-white dark:bg-bg-card border-border-main/55 text-text-muted hover:border-accent/30"
+                  )}
+              >
+                  <div className={cn(
+                      "w-5.5 h-5.5 rounded-lg border flex items-center justify-center transition-all",
+                      isFirstMonthIstihadloh ? "bg-accent border-accent text-white" : "border-border-main bg-bg-main"
+                  )}>
+                  {isFirstMonthIstihadloh && <CheckCircle2 className="w-4 h-4" />}
+                  </div>
+                  <div className="text-left">
+                      <div className="text-xs font-bold text-text-contrast leading-none">Bulan Pertama Istihadlah</div>
+                      <div className="text-[11px] text-text-muted mt-2">Centang jika ini merupakan siklus bulanan pertama Anda mengalami pendarahan panjang (melebihi 15 hari)</div>
+                  </div>
+              </button>
+              
+              {!isFirstMonthIstihadloh && (
+                  <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="p-5 bg-white dark:bg-bg-card border border-border-main/50 rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.03)] text-center">
+                      <div className="text-xs font-bold text-text-muted mb-4">Masa Istihadlah Berlangsung</div>
+                      <div className="flex items-center justify-center gap-4">
+                          <button 
+                              type="button"
+                              onClick={() => setMonthIndex(Math.max(0, monthIndex - 1))}
+                              className="w-10 h-10 flex items-center justify-center bg-bg-main border border-border-main/80 text-text-contrast hover:border-accent rounded-xl font-bold transition-all active:scale-95 cursor-pointer shadow-sm"
+                          >
+                              -
+                          </button>
+                          <div className="px-6 py-2 bg-[#FFF5F5] dark:bg-accent/10 border border-accent/25 rounded-xl min-w-[120px] text-center font-bold text-sm text-accent">
+                              Siklus Ke-{monthIndex + 1}
+                          </div>
+                          <button 
+                              type="button"
+                              onClick={() => setMonthIndex(monthIndex + 1)}
+                              className="w-10 h-10 flex items-center justify-center bg-bg-main border border-border-main/80 text-text-contrast hover:border-accent rounded-xl font-bold transition-all active:scale-95 cursor-pointer shadow-sm"
+                          >
+                              +
+                          </button>
+                      </div>
+                  </motion.div>
+              )}
+          </motion.div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-4 text-center p-6 bg-white dark:bg-bg-card rounded-2xl border border-border-main/55 shadow-[0_4px_16px_rgba(0,0,0,0.02)]">
+            <Clock className="w-7 h-7 text-accent mx-auto mb-1" />
+            <h3 className="text-xs font-bold text-text-contrast">Waktu Darah Mulai Keluar</h3>
+            <div className="relative">
+              <input 
+                type="time" 
+                value={startTime}
+                onChange={e => setStartTime(e.target.value)}
+                className="w-full bg-bg-main border border-border-main/80 p-3.5 rounded-xl text-xl text-center text-text-contrast font-bold focus:outline-none focus:border-accent transition-colors"
+              />
+            </div>
+            <p className="text-[11px] text-text-muted italic max-w-[200px] mx-auto leading-relaxed">
+              Berguna untuk menilai kewajiban/keabsahan sholat fardhu di awal haid.
+            </p>
             
             <button 
-                onClick={() => setIsFirstMonthIstihadloh(!isFirstMonthIstihadloh)}
-                className={cn(
-                    "w-full flex items-center gap-3 p-5 rounded-2xl border transition-all cursor-pointer",
-                    isFirstMonthIstihadloh ? "bg-accent/15 border-accent text-accent shadow-sm font-bold" : "bg-bg-card border-border-main text-text-muted hover:border-accent/40 hover:text-text-main"
-                )}
+              type="button"
+              onClick={() => setHasPerformed(!hasPerformed)}
+              className={cn(
+                  "w-full flex items-center gap-2.5 p-3 rounded-xl border transition-all mt-4 cursor-pointer active:scale-99 text-left font-medium",
+                  hasPerformed ? "bg-[#FFF5F5] dark:bg-accent/10 border-accent/40 text-accent font-semibold" : "bg-bg-main border-border-main text-text-muted"
+              )}
             >
-                <div className={cn(
-                    "w-6 h-6 rounded-lg border flex items-center justify-center transition-all",
-                    isFirstMonthIstihadloh ? "bg-accent border-accent" : "border-border-main bg-bg-main"
-                )}>
-                {isFirstMonthIstihadloh && <CheckCircle2 className="w-4 h-4 text-white dark:text-bg-main" />}
-                </div>
-                <div className="text-left">
-                    <div className="text-sm font-black uppercase tracking-widest leading-none">Bulan Pertama Istihadloh</div>
-                    <div className="text-[10px] lowercase opacity-60 mt-2">Centang jika ini bulan pertama Anda mengalami pendarahan panjang (lebih 15 hari)</div>
-                </div>
+              <div className={cn(
+                  "w-4 h-4 rounded border flex items-center justify-center transition-all",
+                  hasPerformed ? "bg-accent border-accent text-white" : "border-neutral-400 bg-white"
+              )}>
+                  {hasPerformed && <CheckCircle2 className="w-3.5 h-3.5" />}
+              </div>
+              <span className="text-[11px] leading-tight">Saya sudah sholat fardhu di jam ini</span>
             </button>
-            
-            {!isFirstMonthIstihadloh && (
-                <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="p-5 bg-bg-card border border-border-main rounded-2xl">
-                    <div className="text-xs font-black uppercase tracking-widest text-slate-500 mb-4">Bulan Ke-berapa Istihadloh Berlangsung?</div>
-                    <div className="flex items-center gap-4">
-                        <button 
-                            onClick={() => setMonthIndex(Math.max(0, monthIndex - 1))}
-                            className="w-10 h-10 flex items-center justify-center bg-bg-main border border-border-main text-text-contrast hover:border-accent/40 rounded-xl font-bold transition-all cursor-pointer"
-                        >
-                            -
-                        </button>
-                        <div className="px-6 py-2 bg-bg-main border border-border-main rounded-xl min-w-[100px] text-center font-black text-lg text-accent">
-                            Bulan {monthIndex + 1}
-                        </div>
-                        <button 
-                            onClick={() => setMonthIndex(monthIndex + 1)}
-                            className="w-10 h-10 flex items-center justify-center bg-bg-main border border-border-main text-text-contrast hover:border-accent/40 rounded-xl font-bold transition-all cursor-pointer"
-                        >
-                            +
-                        </button>
-                    </div>
-                </motion.div>
-            )}
-        </motion.div>
-      )}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 md:gap-12">
-        <div className="space-y-4 text-center p-6 md:p-8 bg-bg-card rounded-2xl border border-border-main">
-          <Clock className="w-6 h-6 md:w-8 md:h-8 text-accent mx-auto mb-2" />
-          <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">Waktu Darah Mulai</h3>
-            <input 
-              type="time" 
-              value={startTime}
-              onChange={e => setStartTime(e.target.value)}
-              className="w-full bg-bg-main border border-border-main p-3 md:p-4 rounded-xl text-xl md:text-2xl text-center text-text-contrast focus:outline-none focus:border-accent"
-            />
-          <p className="text-[9px] md:text-[10px] text-slate-400 leading-relaxed italic">
-            Audit kewajiban sholat awal.
-          </p>
-          
-          <button 
-            onClick={() => setHasPerformed(!hasPerformed)}
-            className={cn(
-                "w-full flex items-center gap-3 p-3 rounded-lg border transition-all mt-4",
-                hasPerformed ? "bg-accent/10 border-accent/30 text-accent" : "bg-bg-main border-border-main text-slate-500"
-            )}
-          >
-            <div className={cn(
-                "w-4 h-4 rounded border flex items-center justify-center",
-                hasPerformed ? "bg-accent border-accent" : "border-slate-700"
-            )}>
-                {hasPerformed && <CheckCircle2 className="w-3 h-3 text-bg-main" />}
-            </div>
-            <span className="text-xs font-black uppercase tracking-tight">Saya sudah sholat fardlu di waktu ini</span>
-          </button>
-        </div>
-        <div className="space-y-4 text-center p-6 md:p-8 bg-bg-card rounded-2xl border border-border-main">
-          <div className="w-6 h-6 md:w-8 md:h-8 flex items-center justify-center mx-auto mb-2">
-            <div className="w-1.5 h-6 md:w-2 md:h-8 bg-accent/20 rounded-full relative">
-              <div className="absolute bottom-0 left-0 w-full h-1/2 bg-accent rounded-full" />
-            </div>
           </div>
-          <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">Waktu Darah Berhenti</h3>
-          <input 
-            type="time" 
-            value={stopTime}
-            onChange={e => setStopTime(e.target.value)}
-            className="w-full bg-bg-main border border-border-main p-3 md:p-4 rounded-xl text-xl md:text-2xl text-center text-text-contrast focus:outline-none focus:border-accent"
-          />
-          <p className="text-[9px] md:text-[10px] text-slate-400 leading-relaxed italic">
-            Audit kewajiban qodho akhir.
-          </p>
+
+          <div className="space-y-4 text-center p-6 bg-white dark:bg-bg-card rounded-2xl border border-border-main/55 shadow-[0_4px_16px_rgba(0,0,0,0.02)]">
+            <div className="w-7 h-7 flex items-center justify-center mx-auto mb-1 text-accent">
+              <Clock className="w-7 h-7" />
+            </div>
+            <h3 className="text-xs font-bold text-text-contrast">Waktu Darah Berhenti Total</h3>
+            <div className="relative">
+              <input 
+                type="time" 
+                value={stopTime}
+                onChange={e => setStopTime(e.target.value)}
+                className="w-full bg-bg-main border border-border-main/80 p-3.5 rounded-xl text-xl text-center text-text-contrast font-bold focus:outline-none focus:border-accent transition-colors"
+              />
+            </div>
+            <p className="text-[11px] text-text-muted italic max-w-[200px] mx-auto leading-relaxed">
+              Berguna untuk mendeteksi keharusan meng-qadha sholat wajib di batas akhir haid.
+            </p>
+          </div>
         </div>
       </div>
     </div>
   );
 
   const renderResult = () => (
-    <div className="space-y-12 pb-24">
+    <div className="space-y-10 pb-24 max-w-4xl mx-auto">
       {/* DRAWER: KESIMPULAN DETAIL */}
       <AnimatePresence>
         {isDetailOpen && (
@@ -1368,62 +1746,62 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsDetailOpen(false)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] cursor-pointer"
+              className="fixed inset-0 bg-black/50 backdrop-blur-md z-[100] cursor-pointer"
             />
             <motion.div 
               initial={{ y: "100%" }}
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 max-h-[85vh] bg-bg-main border-t border-border-main rounded-t-[2.5rem] z-[101] overflow-hidden flex flex-col shadow-2xl"
+              transition={{ type: "spring", damping: 28, stiffness: 220 }}
+              className="fixed bottom-0 left-0 right-0 max-h-[85vh] bg-white dark:bg-bg-side border-t border-border-main rounded-t-[2rem] z-[101] overflow-hidden flex flex-col shadow-2xl"
             >
-               <div className="w-12 h-1.5 bg-slate-800 rounded-full mx-auto my-4 shrink-0" />
+               <div className="w-12 h-1 bg-neutral-300 dark:bg-neutral-700 rounded-full mx-auto my-3.5 shrink-0" />
                
-               <div className="flex-1 overflow-y-auto px-8 md:px-12 pb-12 custom-scrollbar">
-                  <div className="flex justify-between items-start mb-8">
+               <div className="flex-1 overflow-y-auto px-6 md:px-10 pb-10 custom-scrollbar">
+                  <div className="flex justify-between items-start mb-6">
                     <div>
-                      <h3 className="text-2xl font-serif italic text-accent">Rincian Analisis Fiqih</h3>
-                      <p className="text-[10px] md:text-xs text-slate-500 uppercase tracking-widest mt-1 font-black leading-relaxed" style={{ textWrap: 'balance' }}>{result?.shortCategory}</p>
+                      <h3 className="text-xl font-bold text-accent">Rincian Analisis Fiqih</h3>
+                      <p className="text-xs text-text-muted mt-1 leading-relaxed" style={{ textWrap: 'balance' }}>{result?.shortCategory}</p>
                     </div>
                     <button 
                       onClick={() => setIsDetailOpen(false)}
-                      className="p-2 hover:bg-slate-800 rounded-full text-slate-500 transition-colors"
+                      className="p-1.5 hover:bg-bg-main rounded-full text-text-muted hover:text-text-contrast transition-colors cursor-pointer"
                     >
-                      <X className="w-6 h-6" />
+                      <X className="w-5 h-5" />
                     </button>
                   </div>
 
-                  <div className="space-y-10">
-                    <section className="space-y-4">
-                      <div className="text-[11px] text-text-contrast uppercase tracking-widest font-black flex items-center gap-2 font-display">
+                  <div className="space-y-6">
+                    <section className="space-y-2.5">
+                      <div className="text-xs font-bold text-text-contrast flex items-center gap-2">
                         <FileText className="w-4 h-4 text-accent" /> Kesimpulan Detail
                       </div>
-                      <div className="p-6 md:p-8 bg-bg-card rounded-2xl border border-border-main font-sans text-xs md:text-[13px] leading-relaxed text-text-main font-semibold whitespace-pre-line border-l-4 border-l-accent shadow-sm">
+                      <div className="p-5 bg-[#FAFAFA] dark:bg-bg-card rounded-xl border border-border-main font-sans text-xs md:text-[13px] leading-relaxed text-text-main font-medium whitespace-pre-line border-l-4 border-l-accent shadow-[0_2px_8px_rgba(0,0,0,0.01)]">
                         {result?.analysis}
                       </div>
                     </section>
 
                     {result?.categoryReason && (
-                      <section className="space-y-4">
-                        <div className="text-[11px] text-text-contrast uppercase tracking-widest font-black flex items-center gap-2 font-display">
+                      <section className="space-y-2.5">
+                        <div className="text-xs font-bold text-text-contrast flex items-center gap-2">
                           <Info className="w-4 h-4 text-accent" /> Alasan Penentuan Golongan
                         </div>
-                        <div className="p-6 md:p-8 bg-bg-card rounded-2xl border border-border-main font-sans text-xs md:text-[13px] leading-relaxed text-text-main font-semibold border-l-4 border-l-accent shadow-sm">
+                        <div className="p-5 bg-[#FAFAFA] dark:bg-bg-card rounded-xl border border-border-main font-sans text-xs md:text-[13px] leading-relaxed text-text-main font-semibold border-l-4 border-l-accent shadow-[0_2px_8px_rgba(0,0,0,0.01)]">
                           {result.categoryReason}
                         </div>
                       </section>
                     )}
 
                     {result?.specialNotes && result.specialNotes.length > 0 && (
-                      <section className="space-y-4">
-                        <div className="text-[11px] text-text-contrast uppercase tracking-widest font-black flex items-center gap-2 font-display">
+                      <section className="space-y-2.5">
+                        <div className="text-xs font-bold text-text-contrast flex items-center gap-2">
                           <AlertCircle className="w-4 h-4 text-accent" /> Catatan Strategis
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                           {result.specialNotes.map((note, i) => (
-                            <div key={i} className="p-5 bg-bg-card border border-border-main rounded-2xl flex gap-3 shadow-sm">
+                            <div key={i} className="p-4 bg-[#FAFAFA] dark:bg-bg-card border border-border-main rounded-xl flex gap-3 shadow-none">
                                <div className="w-1.5 h-1.5 rounded-full bg-accent mt-1.5 shrink-0 animate-pulse" />
-                               <p className="text-[11px] text-text-main font-semibold leading-relaxed">{note}</p>
+                               <p className="text-xs text-text-main font-medium leading-relaxed">{note}</p>
                             </div>
                           ))}
                         </div>
@@ -1447,38 +1825,38 @@ export default function App() {
             />
             <motion.div 
               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 max-h-[85vh] bg-bg-main border-t border-border-main rounded-t-[2.5rem] z-[101] overflow-hidden flex flex-col shadow-2xl"
+              transition={{ type: "spring", damping: 28, stiffness: 220 }}
+              className="fixed bottom-0 left-0 right-0 max-h-[85vh] bg-white dark:bg-bg-side border-t border-border-main rounded-t-[2rem] z-[101] overflow-hidden flex flex-col shadow-2xl"
             >
-               <div className="w-12 h-1.5 bg-slate-800 rounded-full mx-auto my-4 shrink-0" />
-               <div className="flex-1 overflow-y-auto px-8 md:px-12 pb-12 custom-scrollbar">
-                  <div className="flex justify-between items-start mb-8">
+               <div className="w-12 h-1 bg-neutral-300 dark:bg-neutral-700 rounded-full mx-auto my-3.5 shrink-0" />
+               <div className="flex-1 overflow-y-auto px-6 md:px-10 pb-10 custom-scrollbar">
+                  <div className="flex justify-between items-start mb-6">
                     <div>
-                      <h3 className="text-2xl font-serif italic text-accent">Lini Masa Status (Kalender ringkasan)</h3>
-                      <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-1 font-black">Gabungan Berdasarkan Status Hukum</p>
+                      <h3 className="text-xl font-bold text-accent">Lini Masa Status</h3>
+                      <p className="text-xs text-text-muted mt-1 leading-relaxed">Status hukum pendarahan hari demi hari</p>
                     </div>
-                    <button onClick={() => setIsTimelineOpen(false)} className="p-2 hover:bg-slate-800 rounded-full text-slate-500"><X className="w-6 h-6" /></button>
+                    <button onClick={() => setIsTimelineOpen(false)} className="p-1.5 hover:bg-bg-main rounded-full text-text-muted hover:text-text-contrast cursor-pointer"><X className="w-5 h-5" /></button>
                   </div>
 
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     {result?.groupedTimeline?.map((group, i) => (
-                      <div key={i} className="flex flex-col gap-2 p-5 bg-bg-card border border-border-main rounded-2xl hover:bg-white/5 transition-colors">
-                        <div className="flex items-center gap-4">
-                           <div className="px-4 py-1.5 bg-bg-main border border-border-main rounded-lg text-[10px] font-mono text-slate-400">
-                             {group.startDay === group.endDay ? `Hari ke-${group.startDay}` : `Hari ke-${group.startDay} s/d ${group.endDay}`}
+                      <div key={i} className="flex flex-col gap-2.5 p-4.5 bg-bg-card border border-border-main/55 rounded-xl hover:bg-neutral-50 dark:hover:bg-white/5 transition-colors">
+                        <div className="flex items-center gap-3">
+                           <div className="px-3 py-1 bg-[#FAFAFA] dark:bg-bg-main border border-border-main rounded-lg text-xs font-semibold text-text-muted">
+                             {group.startDay === group.endDay ? `Hari Ke-${group.startDay}` : `Hari Ke-${group.startDay} s/d ${group.endDay}`}
                            </div>
                            <div className={cn(
-                              "px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-widest",
-                              group.status === 'Haid' ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/20" :
-                              group.status === 'Nifas' ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/20" :
-                              group.status === 'Suci' ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20" :
-                              group.status === 'Ihtiyath' ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20" :
-                              "bg-bg-side text-text-muted border-border-main" 
+                              "px-2.5 py-0.5 rounded text-[10px] font-bold border border-transparent",
+                              group.status === 'Haid' ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/15" :
+                              group.status === 'Nifas' ? "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/15" :
+                              group.status === 'Suci' ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/15" :
+                              group.status === 'Ihtiyath' ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/15" :
+                              "bg-neutral-100 dark:bg-neutral-800 text-text-muted border-neutral-200" 
                            )}>
                              {group.status === 'Istihadloh' ? 'Istihaḍah' : group.status}
                            </div>
                         </div>
-                        <p className="text-xs text-slate-400 italic leading-relaxed pl-2 border-l-2 border-border-main ml-2">
+                        <p className="text-xs text-text-muted italic leading-relaxed pl-2 border-l-2 border-border-main/75 ml-1.5">
                            {group.reason}
                         </p>
                       </div>
@@ -1501,28 +1879,28 @@ export default function App() {
             />
             <motion.div 
               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 right-0 max-h-[85vh] bg-bg-main border-t border-border-main rounded-t-[2.5rem] z-[101] overflow-hidden flex flex-col shadow-2xl"
+              transition={{ type: "spring", damping: 28, stiffness: 220 }}
+              className="fixed bottom-0 left-0 right-0 max-h-[85vh] bg-white dark:bg-bg-side border-t border-border-main rounded-t-[2rem] z-[101] overflow-hidden flex flex-col shadow-2xl"
             >
-               <div className="w-12 h-1.5 bg-slate-800 rounded-full mx-auto my-4 shrink-0" />
-               <div className="flex-1 overflow-y-auto px-8 md:px-12 pb-12 custom-scrollbar">
-                  <div className="flex justify-between items-start mb-8">
+               <div className="w-12 h-1 bg-neutral-300 dark:bg-neutral-700 rounded-full mx-auto my-3.5 shrink-0" />
+               <div className="flex-1 overflow-y-auto px-6 md:px-10 pb-10 custom-scrollbar">
+                  <div className="flex justify-between items-start mb-6">
                     <div>
-                      <h3 className="text-2xl font-serif italic text-accent">Daftar Kewajiban Qodlo</h3>
-                      <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-1 font-black">Sholat & Puasa yang Wajib Diganti</p>
+                      <h3 className="text-xl font-bold text-accent">Daftar Kewajiban Qadha</h3>
+                      <p className="text-xs text-text-muted mt-1 font-medium leading-relaxed">Shalat & puasa fardhu yang wajib Anda ganti</p>
                     </div>
-                    <button onClick={() => setIsQodloOpen(false)} className="p-2 hover:bg-slate-800 rounded-full text-slate-500"><X className="w-6 h-6" /></button>
+                    <button onClick={() => setIsQodloOpen(false)} className="p-1.5 hover:bg-bg-main rounded-full text-text-muted cursor-pointer"><X className="w-5 h-5" /></button>
                   </div>
 
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     {result?.totalQodloPuasa !== undefined && result.totalQodloPuasa > 0 && (
-                      <div className="p-6 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center gap-6 mb-4">
-                          <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-500 shrink-0">
-                             <Target className="w-6 h-6" />
+                      <div className="p-4.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center gap-3.5 mb-2">
+                          <div className="w-10 h-10 rounded-full bg-emerald-500/15 flex items-center justify-center text-emerald-600 shrink-0">
+                             <Target className="w-5 h-5" />
                           </div>
                           <div>
-                              <div className="text-xs font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Hutang Puasa</div>
-                              <div className="text-3xl font-black text-text-contrast">{result.totalQodloPuasa} <span className="text-sm uppercase text-emerald-600 dark:text-emerald-400 font-bold ml-1">Hari</span></div>
+                              <div className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">Hutang Puasa</div>
+                              <div className="text-xl font-bold text-text-contrast">{result.totalQodloPuasa} <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium ml-0.5">Hari</span></div>
                           </div>
                       </div>
                     )}
@@ -1531,27 +1909,27 @@ export default function App() {
                       {result?.groupedQadho
                         ?.filter(group => !group.message.includes("Darah Istihadloh (Fasad)"))
                         ?.map((group, i) => (
-                        <div key={i} className="flex gap-4 items-start p-5 bg-red-500/5 dark:bg-red-500/10 border border-red-500/20 rounded-2xl group hover:border-red-500/40 transition-all shadow-sm">
-                          <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center shrink-0">
-                            <AlertCircle className="w-6 h-6 text-red-500" />
+                        <div key={i} className="flex gap-3.5 items-start p-4 bg-red-500/5 dark:bg-red-500/10 border border-red-500/15 rounded-xl group hover:border-red-500/35 transition-all shadow-sm">
+                          <div className="w-9 h-9 rounded-full bg-red-500/15 flex items-center justify-center shrink-0 text-red-500">
+                            <AlertCircle className="w-5 h-5" />
                           </div>
-                          <div className="space-y-2">
+                          <div className="space-y-1.5 my-0.5">
                             <div className="flex items-center gap-2">
-                                <div className="text-[12px] font-black text-red-600 dark:text-red-400 uppercase tracking-[0.2em] leading-none">
-                                    {group.startDay === group.endDay ? `Hari ke-${group.startDay}` : `Hari ke-${group.startDay} s/d ke-${group.endDay}`}
+                                <div className="text-[11px] font-bold text-red-600 dark:text-red-400">
+                                    {group.startDay === group.endDay ? `Hari Ke-${group.startDay}` : `Hari Ke-${group.startDay} s/d Ke-${group.endDay}`}
                                 </div>
-                                <div className="px-2 py-0.5 bg-red-500/10 border border-red-500/20 rounded text-[8px] font-black uppercase text-red-500">
+                                <span className="px-1.5 py-0.2 bg-red-500/10 border border-red-500/10 rounded text-[9px] font-semibold text-red-500">
                                     Penting
-                                </div>
+                                </span>
                             </div>
-                            <p className="text-[12px] text-text-main leading-relaxed font-bold">{group.message}</p>
+                            <p className="text-xs text-text-main leading-relaxed font-semibold">{group.message}</p>
                           </div>
                         </div>
                       ))}
                       {(!result?.groupedQadho || result.groupedQadho.length === 0) && (
-                         <div className="p-10 bg-bg-card border border-border-main/50 rounded-[2rem] text-center space-y-4">
-                           <CheckCircle2 className="w-12 h-12 text-emerald-500/30 mx-auto" />
-                           <p className="text-xs text-slate-500 italic">Tidak ada kewajiban qodlo sholat yang terdeteksi.</p>
+                         <div className="p-8 bg-white dark:bg-bg-card border border-border-main/50 rounded-2xl text-center space-y-3 shadow-none">
+                           <CheckCircle2 className="w-10 h-10 text-emerald-500/35 mx-auto animate-pulse" />
+                           <p className="text-xs text-text-muted italic">Tidak ada kewajiban qadha shalat yang terdeteksi.</p>
                          </div>
                       )}
                     </div>
@@ -1562,50 +1940,50 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <div className="grid grid-cols-1 gap-12">
+      <div className="grid grid-cols-1 gap-8">
         {/* HEADLINE RESULT CARD */}
-        <div className="space-y-6">
-          <div className="bg-bg-card p-10 md:p-16 rounded-[2.5rem] border border-border-main shadow-2xl relative overflow-hidden group">
+        <div className="space-y-5">
+          <div className="bg-white dark:bg-bg-side p-8 md:p-14 rounded-2xl border border-border-main/55 shadow-[0_8px_30px_rgb(0,0,0,0.02)] relative overflow-hidden group">
             <div className="absolute top-0 right-0 w-64 h-64 bg-accent/5 blur-[100px] -mr-32 -mt-32 rounded-full" />
             <div className="absolute bottom-0 left-0 w-48 h-48 bg-accent/5 blur-[80px] -ml-24 -mb-24 rounded-full" />
             
-            <div className="relative text-center space-y-6">
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-accent/10 border border-accent/20 rounded-full text-accent text-[10px] font-black uppercase tracking-[0.2em]">
-                <Activity className="w-3 h-3" /> Kesimpulan Status Darah
+            <div className="relative text-center space-y-5">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1 bg-accent/10 border border-accent/15 rounded-full text-accent text-xs font-semibold">
+                <Activity className="w-3.5 h-3.5" /> Kesimpulan Status Darah
               </div>
               
               <h2 className={cn(
-                "font-black text-text-contrast uppercase tracking-tighter leading-tight max-w-3xl mx-auto",
-                (result?.shortCategory?.length || 0) > 80 ? "text-xl md:text-3xl" : 
-                (result?.shortCategory?.length || 0) > 40 ? "text-2xl md:text-4xl" : "text-3xl md:text-5xl"
+                "font-bold text-text-contrast tracking-tight leading-tight max-w-3xl mx-auto font-display",
+                (result?.shortCategory?.length || 0) > 80 ? "text-lg md:text-2xl" : 
+                (result?.shortCategory?.length || 0) > 40 ? "text-xl md:text-3xl" : "text-2xl md:text-4.5xl"
               )} style={{ textWrap: 'balance' }}>
                 {result?.shortCategory}
               </h2>
 
-              <p className="text-[10px] md:text-xs text-slate-500 uppercase tracking-[0.3em] font-bold opacity-60">
-                Analisis Berdasarkan Pola Karakteristik & Adat
+              <p className="text-xs text-text-muted font-medium">
+                Analisis Berdasarkan Pola Karakteristik & Adat Kebiasaan
               </p>
 
               {result?.categoryReason && (
-                <div className="max-w-2xl mx-auto p-6 md:p-8 bg-bg-side border-2 border-accent/20 rounded-3xl text-left space-y-3 group-hover:border-accent/50 transition-colors shadow-sm">
-                  <div className="text-[11px] text-accent font-black uppercase tracking-[0.15em] flex items-center gap-1.5 font-display">
+                <div className="max-w-2xl mx-auto p-5 md:p-6 bg-[#FFF5F5] dark:bg-bg-card border-l-4 border-l-accent border-r border-t border-b border-border-main rounded-r-xl rounded-l-md text-left space-y-2.5 transition-colors shadow-[0_2px_8px_rgba(0,0,0,0.01)]">
+                  <div className="text-xs text-accent font-bold flex items-center gap-1.5">
                     <Info className="w-4 h-4 text-accent" /> Alasan Penentuan Golongan
                   </div>
                   <p className="text-text-main text-xs md:text-[13px] leading-relaxed font-semibold font-sans">{result.categoryReason}</p>
                 </div>
               )}
 
-              <div className="pt-8 flex flex-wrap gap-4 items-center justify-center">
+              <div className="pt-6 flex flex-wrap gap-3.5 items-center justify-center">
                 <button 
                   onClick={() => setIsDetailOpen(true)}
-                  className="inline-flex items-center gap-4 py-4 px-8 bg-bg-main border border-border-main rounded-2xl hover:border-accent hover:text-accent transition-all group/btn shadow-xl shadow-black/20"
+                  className="inline-flex items-center gap-3 py-3.5 px-6 bg-white dark:bg-bg-side border border-border-main/80 rounded-xl hover:border-accent hover:text-accent transition-all group/btn shadow-[0_2px_10px_rgba(0,0,0,0.02)] text-xs font-bold cursor-pointer"
                 >
-                  <FileText className="w-5 h-5 text-accent" />
+                  <FileText className="w-5 h-5 text-accent animate-pulse" />
                    <div className="text-left">
-                      <div className="text-xs font-black uppercase tracking-widest">Baca Penjelasan Detail</div>
-                      <div className="text-[9px] lowercase opacity-60">Lihat rincian analisis fiqih & dalil</div>
+                      <div className="text-xs font-bold text-text-contrast">Baca Penjelasan Detail</div>
+                      <div className="text-[10px] text-text-muted font-medium">Lihat rincian analisis fardhu & rincian dalil</div>
                    </div>
-                   <ChevronRight className="w-4 h-4 ml-4 group-hover/btn:translate-x-1 transition-transform" />
+                   <ChevronRight className="w-4 h-4 ml-2 group-hover/btn:translate-x-0.5 transition-transform" />
                 </button>
               </div>
             </div>
@@ -1613,36 +1991,36 @@ export default function App() {
         </div>
 
         {/* ACTION BUTTONS GRID */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 animate-slide-up">
           <button 
             onClick={() => setIsTimelineOpen(true)}
-            className="group flex flex-col p-8 bg-bg-card border border-border-main rounded-[2.5rem] hover:border-accent transition-all text-left shadow-xl hover:shadow-accent/5"
+            className="group flex flex-col p-6 bg-white dark:bg-bg-side border border-border-main/55 rounded-2xl hover:border-accent transition-all text-left shadow-[0_4px_16px_rgba(0,0,0,0.01)] hover:shadow-[0_4px_20px_rgba(185,28,28,0.03)] cursor-pointer"
           >
-            <div className="w-14 h-14 rounded-2xl bg-accent/10 flex items-center justify-center text-accent mb-6 group-hover:scale-110 transition-transform">
-               <Calendar className="w-7 h-7" />
+            <div className="w-11 h-11 rounded-xl bg-accent/10 flex items-center justify-center text-accent mb-4.5 group-hover:scale-105 transition-transform">
+               <Calendar className="w-5.5 h-5.5" />
             </div>
-            <h3 className="text-lg font-black uppercase tracking-widest text-text-contrast mb-2">Lihat Lini Masa Kalender</h3>
-            <p className="text-xs text-slate-500 leading-relaxed italic">Lihat deskripsi status hukum darah hari demi hari secara ringkas.</p>
-            <div className="mt-8 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-accent opacity-0 group-hover:opacity-100 transition-opacity">
-               Buka Lini Masa <ChevronRight className="w-3 h-3" />
+            <h3 className="text-[15px] font-bold text-text-contrast mb-1.5">Lihat Lini Masa Kalender</h3>
+            <p className="text-xs text-text-muted leading-relaxed font-semibold italic">Lihat deskripsi status hukum darah hari demi hari secara ringkas.</p>
+            <div className="mt-6 flex items-center gap-1.5 text-xs font-bold text-accent opacity-0 group-hover:opacity-100 transition-opacity">
+               Buka Lini Masa <ChevronRight className="w-3.5 h-3.5" />
             </div>
           </button>
 
           <button 
             onClick={() => setIsQodloOpen(true)}
-            className="group flex flex-col p-8 bg-bg-card border border-border-main rounded-[2.5rem] hover:border-accent transition-all text-left shadow-xl hover:shadow-accent/5"
+            className="group flex flex-col p-6 bg-white dark:bg-bg-side border border-border-main/55 rounded-2xl hover:border-accent transition-all text-left shadow-[0_4px_16px_rgba(0,0,0,0.01)] hover:shadow-[0_4px_20px_rgba(185,28,28,0.03)] cursor-pointer"
           >
-            <div className="w-14 h-14 rounded-2xl bg-red-500/10 flex items-center justify-center text-red-500 mb-6 group-hover:scale-110 transition-transform">
-               <Target className="w-7 h-7" />
+            <div className="w-11 h-11 rounded-xl bg-red-500/10 flex items-center justify-center text-red-500 mb-4.5 group-hover:scale-105 transition-transform">
+               <Target className="w-5.5 h-5.5" />
             </div>
-            <h3 className="text-lg font-black uppercase tracking-widest text-text-contrast mb-2">Lihat Kewajiban Qodlo</h3>
-            <p className="text-xs text-slate-500 leading-relaxed italic">
+            <h3 className="text-[15px] font-bold text-text-contrast mb-1.5">Lihat Kewajiban Qadha</h3>
+            <p className="text-xs text-text-muted leading-relaxed font-semibold italic">
                {result?.qadhoObligations.length === 0 && result.totalQodloPuasa === 0 
-                ? "Alhamdulillah, tidak ada kewajiban qodlo yang terdeteksi." 
-                : "Lihat rincian sholat dan puasa yang wajib Anda qodlo."}
+                ? "Alhamdulillah, tidak ada kewajiban qadha yang terdeteksi." 
+                : "Lihat rincian shalat dan puasa yang wajib Anda qadha."}
             </p>
-            <div className="mt-8 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-               Buka Daftar Qodlo <ChevronRight className="w-3 h-3" />
+            <div className="mt-6 flex items-center gap-1.5 text-xs font-bold text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+               Buka Daftar Qadha <ChevronRight className="w-3.5 h-3.5" />
             </div>
           </button>
         </div>
@@ -1650,9 +2028,9 @@ export default function App() {
 
       <button 
         onClick={() => { setStep(1); setResult(null); setRecords([]); setIsDetailOpen(false); setIsTimelineOpen(false); setIsQodloOpen(false); }}
-        className="w-full py-6 bg-bg-card border border-border-main text-text-contrast rounded-[2rem] font-black uppercase tracking-[0.4em] text-xs hover:bg-bg-side hover:border-accent transition-all flex items-center justify-center gap-4 shadow-xl active:scale-95"
+        className="w-full py-4.5 bg-white dark:bg-bg-side border border-border-main text-text-contrast rounded-full text-xs font-bold hover:border-accent hover:bg-[#FFF5F5] dark:hover:bg-white/5 transition-all flex items-center justify-center gap-3 shadow-sm active:scale-[0.98] cursor-pointer"
       >
-        <RefreshCw className="w-5 h-5" /> Mulai Analisis Baru
+        <RefreshCw className="w-4.5 h-4.5 animate-spin-slow" /> Mulai Analisis Baru
       </button>
     </div>
   );
@@ -1764,46 +2142,17 @@ export default function App() {
           showBack={location.pathname !== '/'}
         >
           <button 
+              type="button"
               onClick={toggleTheme}
-              className="p-2 md:p-2.5 border border-border-main text-slate-500 hover:text-text-contrast rounded hover:bg-bg-card transition-colors"
+              className="p-2 md:p-2.5 border border-border-main text-slate-500 hover:text-text-contrast rounded hover:bg-bg-card transition-colors cursor-pointer"
             >
               {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
 
-            {step > 1 && step < 5 && !location.pathname.startsWith('/articles') && (
+            {step === 5 && !location.pathname.startsWith('/articles') && (
               <button 
-                onClick={() => {
-                  const prevStep = allSteps
-                    .filter(s => s.id < step && !s.hideFor?.includes(experience))
-                    .pop();
-                  if (prevStep) setStep(prevStep.id);
-                }}
-                className="p-2 md:px-6 md:py-2.5 border border-border-main text-[10px] uppercase font-bold tracking-widest rounded hover:bg-slate-800 transition-colors flex items-center gap-2"
-              >
-                <ChevronLeft className="w-3 h-3" /> <span className="hidden sm:inline">Back</span>
-              </button>
-            )}
-            
-            {step < 5 && !location.pathname.startsWith('/articles') ? (
-              <button 
-                disabled={isLoading}
-                onClick={step === 4 ? handleAnalyze : () => {
-                  const nextStep = allSteps.find(s => s.id > step && !s.hideFor?.includes(experience));
-                  if (nextStep) setStep(nextStep.id);
-                  setIsSidebarOpen(false);
-                }}
-                className={cn(
-                  "px-4 md:px-8 py-2 md:py-2.5 text-[9px] md:text-[10px] uppercase font-black tracking-[0.2em] rounded flex items-center gap-3 transition-all",
-                  step === 4 ? "bg-accent text-bg-main shadow-lg shadow-accent/20" : "bg-bg-card border border-border-main text-text-contrast"
-                )}
-              >
-                {isLoading && <RefreshCw className="w-3 h-3 animate-spin" />}
-                <span className="whitespace-nowrap">{step === 4 ? "Analyze" : "Continue"}</span>
-                {!isLoading && <ChevronRight className="w-3 h-3" />}
-              </button>
-            ) : !location.pathname.startsWith('/articles') && (
-              <button 
-                className="px-4 md:px-6 py-2 md:py-2.5 bg-accent/10 text-accent border border-accent/30 text-[9px] md:text-[10px] uppercase font-bold tracking-widest rounded flex items-center gap-2"
+                type="button"
+                className="px-4 md:px-6 py-2 md:py-2.5 bg-accent/10 text-accent border border-accent/30 text-[9px] md:text-[10px] uppercase font-bold tracking-widest rounded flex items-center gap-2 cursor-pointer"
                 onClick={() => window.print()}
               >
                 <Save className="w-3 h-3" /> <span className="hidden sm:inline">PDF</span>
@@ -1811,32 +2160,42 @@ export default function App() {
             )}
         </Header>
 
-        <section className="flex-1 overflow-y-auto p-6 md:p-12 custom-scrollbar">
-          <Routes>
-            <Route path="/articles" element={<ArticleList />} />
-            <Route path="/articles/:id" element={<ArticleDetail />} />
-            <Route path="/articles/new" element={<ArticleEditor />} />
-            <Route path="/articles/edit/:id" element={<ArticleEditor />} />
-            <Route path="/" element={
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={step}
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.3, ease: "easeOut" }}
-                  className="max-w-4xl mx-auto md:mx-0"
-                >
-                  {step === 1 && renderStep1()}
-                  {step === 2 && renderStep2()}
-                  {step === 3 && renderStep3()}
-                  {step === 4 && renderStep4()}
-                  {step === 5 && renderResult()}
-                </motion.div>
-              </AnimatePresence>
-            } />
-          </Routes>
-        </section>
+        <Routes>
+          <Route path="/articles" element={<div className="flex-1 overflow-y-auto p-6 md:p-12 custom-scrollbar"><ArticleList /></div>} />
+          <Route path="/articles/:id" element={<div className="flex-1 overflow-y-auto p-6 md:p-12 custom-scrollbar"><ArticleDetail /></div>} />
+          <Route path="/articles/new" element={<div className="flex-1 overflow-y-auto p-6 md:p-12 custom-scrollbar"><ArticleEditor /></div>} />
+          <Route path="/articles/edit/:id" element={<div className="flex-1 overflow-y-auto p-6 md:p-12 custom-scrollbar"><ArticleEditor /></div>} />
+          
+          <Route path="/" element={
+            <div className="flex-1 flex flex-col h-full overflow-hidden">
+              {/* PROGRESS BAR */}
+              {renderWizardProgress()}
+
+              {/* SCROLLABLE INNER SECTION */}
+              <div className="flex-1 overflow-y-auto p-6 md:p-12 custom-scrollbar">
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={step}
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    transition={{ duration: 0.3, ease: "easeOut" }}
+                    className="max-w-4xl mx-auto"
+                  >
+                    {step === 1 && renderStep1Redesign()}
+                    {step === 2 && renderStep5Redesign()}
+                    {step === 3 && renderStep3()}
+                    {step === 4 && renderStep4Redesign()}
+                    {step === 5 && renderResult()}
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+
+              {/* STICKY FOOTER NAVIGATION */}
+              {step < 5 && renderStickyBottomNav()}
+            </div>
+          } />
+        </Routes>
       </main>
 
       {/* RIGHT PANEL - Adaptive (Bottom or Sidebar) */}
