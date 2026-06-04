@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 
 async function startServer() {
   const app = express();
@@ -29,13 +30,29 @@ async function startServer() {
     app.get("/manifest.json", (req, res) => {
       res.setHeader("Content-Type", "application/json");
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-      res.sendFile(path.join(distPath, "manifest.json"));
+      const jsonPath = path.join(distPath, "manifest.json");
+      const webmanifestPath = path.join(distPath, "manifest.webmanifest");
+      if (fs.existsSync(jsonPath)) {
+        res.sendFile(jsonPath);
+      } else if (fs.existsSync(webmanifestPath)) {
+        res.sendFile(webmanifestPath);
+      } else {
+        res.status(404).json({ error: "Manifest not found" });
+      }
     });
 
     app.get("/manifest.webmanifest", (req, res) => {
       res.setHeader("Content-Type", "application/manifest+json");
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-      res.sendFile(path.join(distPath, "manifest.json"));
+      const jsonPath = path.join(distPath, "manifest.json");
+      const webmanifestPath = path.join(distPath, "manifest.webmanifest");
+      if (fs.existsSync(webmanifestPath)) {
+        res.sendFile(webmanifestPath);
+      } else if (fs.existsSync(jsonPath)) {
+        res.sendFile(jsonPath);
+      } else {
+        res.status(404).send("Manifest not found");
+      }
     });
 
     app.get("/favicon.ico", (req, res) => {
