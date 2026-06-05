@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Platform,
+  Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -47,11 +48,11 @@ export default function CalculatorHome() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.heroSection}>
-          <View style={[styles.iconRing, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' }]}>
-            <View style={[styles.iconInner, { backgroundColor: colors.primary + '25' }]}>
-              <Ionicons name="water" size={32} color={colors.primary} />
-            </View>
-          </View>
+          <Image
+            source={require('@/assets/images/logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
           <Text style={[styles.appName, { color: colors.foreground }]}>Fiqh Darah</Text>
           <Text style={[styles.appTagline, { color: colors.mutedForeground }]}>
             Kalkulator analisis fiqh haid & nifas berdasarkan kaidah Mazhab Syafi&apos;i
@@ -120,20 +121,9 @@ const styles = StyleSheet.create({
   screen: { flex: 1 },
   content: { padding: 20, gap: 16 },
   heroSection: { alignItems: 'center', gap: 12, paddingVertical: 16 },
-  iconRing: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconInner: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
+  logo: {
+    width: 100,
+    height: 100,
   },
   appName: {
     fontSize: 28,
