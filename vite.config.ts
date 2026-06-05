@@ -81,6 +81,9 @@ export default defineConfig(({mode}) => {
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(process.env.GEMINI_API_KEY || (env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY' ? env.GEMINI_API_KEY : '') || ''),
     },
+    build: {
+      chunkSizeWarningLimit: 2000,
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
