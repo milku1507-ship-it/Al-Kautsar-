@@ -14,7 +14,7 @@ export default defineConfig(({mode}) => {
         registerType: 'autoUpdate',
         injectRegister: 'inline',
         manifestFilename: 'manifest.json',
-        includeAssets: ['icon.svg', 'icon-192.png', 'icon-512.png'],
+        includeAssets: ['logo.png', 'icon.svg', 'icon-192.png', 'icon-512.png'],
         manifest: {
           id: '/',
           name: 'Kalkulator Fiqh Darah',
