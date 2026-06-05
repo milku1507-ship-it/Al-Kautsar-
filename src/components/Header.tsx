@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Menu, ChevronLeft, ShieldCheck } from 'lucide-react';
 import { cn } from '../lib/utils';
+import logoImg from '../assets/images/app_logo_1780661766855.png';
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -54,7 +55,7 @@ export default function Header({ onMenuClick, title, description, showBack, chil
         )}
         <div className="flex-1 flex items-center gap-2 min-w-0 ml-1">
           <img 
-            src="/logo.png" 
+            src={logoImg} 
             alt="Al-Kautsar Logo" 
             className="w-5.5 h-5.5 rounded-full object-cover border border-[#B91C1C]/20 shadow-xs shrink-0" 
             referrerPolicy="no-referrer" 
