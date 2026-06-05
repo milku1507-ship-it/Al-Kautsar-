@@ -1,1 +1,0 @@
-- [Fiqh Darah Mobile Architecture](fiqh-darah-mobile-arch.md) — Mode B Firebase-only mobile app: fiqhEngine.ts is the analysis core, no API server needed
