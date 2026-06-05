@@ -33,6 +33,15 @@
           event.stopImmediatePropagation();
         }
       }, true);
+
+      const originalConsoleError = console.error;
+      console.error = function(...args) {
+        const msg = args.join(' ').toLowerCase();
+        if (msg.includes('websocket') || msg.includes('vite') || msg.includes('closed without opened')) {
+          return;
+        }
+        originalConsoleError.apply(console, args);
+      };
     </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
