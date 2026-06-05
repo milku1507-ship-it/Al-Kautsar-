@@ -2,25 +2,35 @@
 <html lang="id">
   <head>
     <script>
-      // Suppress benign Vite preview sandbox WebSocket connection rejection events
+      // Gracefully prevent and silence benign sandbox Vite/HMR WebSocket connection errors/rejections
+      const isBenignError = (err) => {
+        if (!err) return false;
+        try {
+          const msg = typeof err === 'string' ? err : (err.message || err.description || String(err));
+          const stack = err.stack || '';
+          const matchTerms = ['websocket', 'vite', 'closed without opened', 'hmr'];
+          return matchTerms.some(term => 
+            msg.toLowerCase().includes(term) || 
+            stack.toLowerCase().includes(term)
+          );
+        } catch (_) {
+          return false;
+        }
+      };
+
       window.addEventListener('unhandledrejection', function (event) {
-        if (event.reason && (
-          event.reason.message?.includes('WebSocket') || 
-          event.reason.message?.includes('vite') ||
-          String(event.reason).includes('WebSocket') ||
-          String(event.reason).includes('vite')
-        )) {
+        if (isBenignError(event.reason) || isBenignError(event.detail?.reason)) {
           event.preventDefault();
           event.stopPropagation();
+          event.stopImmediatePropagation();
         }
       }, true);
+
       window.addEventListener('error', function (event) {
-        if (event.message && (
-          event.message.includes('WebSocket') || 
-          event.message.includes('vite')
-        )) {
+        if (isBenignError(event.error) || isBenignError(event.message)) {
           event.preventDefault();
           event.stopPropagation();
+          event.stopImmediatePropagation();
         }
       }, true);
     </script>
