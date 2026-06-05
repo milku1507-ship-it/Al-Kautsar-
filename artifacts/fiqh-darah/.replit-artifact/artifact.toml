@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Kalkulator Fiqh Darah"
+version = "1.0.0"
+id = "artifacts/fiqh-darah"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25491
+
+[services.development]
+run = "pnpm --filter @workspace/fiqh-darah run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/fiqh-darah", "run", "build" ]
+publicDir = "artifacts/fiqh-darah/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25491"
+BASE_PATH = "/"

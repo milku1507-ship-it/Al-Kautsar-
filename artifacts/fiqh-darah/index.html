@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <script>
+      // Gracefully prevent and silence benign sandbox Vite/HMR WebSocket connection errors/rejections
+      const isBenignError = (err) => {
+        if (!err) return false;
+        try {
+          const msg = typeof err === 'string' ? err : (err.message || err.description || String(err));
+          const stack = err.stack || '';
+          const matchTerms = ['websocket', 'vite', 'closed without opened', 'hmr'];
+          return matchTerms.some(term => 
+            msg.toLowerCase().includes(term) || 
+            stack.toLowerCase().includes(term)
+          );
+        } catch (_) {
+          return false;
+        }
+      };
+
+      window.addEventListener('unhandledrejection', function (event) {
+        if (isBenignError(event.reason) || isBenignError(event.detail?.reason)) {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+        }
+      }, true);
+
+      window.addEventListener('error', function (event) {
+        if (isBenignError(event.error) || isBenignError(event.message)) {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+        }
+      }, true);
+
+      const originalConsoleError = console.error;
+      console.error = function(...args) {
+        const msg = args.join(' ').toLowerCase();
+        if (msg.includes('websocket') || msg.includes('vite') || msg.includes('closed without opened')) {
+          return;
+        }
+        originalConsoleError.apply(console, args);
+      };
+    </script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Fiqh Darah" />
+    <link rel="apple-touch-icon" href="/logo.png" />
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <title>Kalkulator Fiqh Darah</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
