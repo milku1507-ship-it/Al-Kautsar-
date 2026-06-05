@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Routes, Route, Link, useLocation, useSearchParams, useNavigate } from 'react-router-dom';
 import Header from './components/Header';
 import ArticleList from './components/articles/ArticleList';
@@ -29,7 +29,8 @@ import {
   Moon,
   Sparkles,
   Compass,
-  ShieldCheck
+  ShieldCheck,
+  ChevronDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -66,11 +67,154 @@ import {
 import { analyzeFiqh } from './services/geminiService';
 import { calculateHijriAge } from './lib/hijriUtils';
 
+interface CustomOption {
+  value: string | number;
+  label: string;
+}
+
+interface CustomSelectProps {
+  value: string | number | undefined;
+  onChange: (val: any) => void;
+  options: CustomOption[];
+  label?: string;
+}
+
+function CustomSelect({ value, onChange, options, label }: CustomSelectProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedOption = options.find(o => o.value === value) || options[0];
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const clickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', clickOutside);
+    return () => document.removeEventListener('mousedown', clickOutside);
+  }, []);
+
+  return (
+    <div className="relative w-full text-left" ref={containerRef}>
+      {label && <label className="text-[11px] font-semibold text-text-muted tracking-tight mb-1.5 block uppercase">{label}</label>}
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between bg-bg-card hover:bg-neutral-50/50 dark:hover:bg-white/5 border border-border-main/80 hover:border-accent/40 py-3 px-3.5 rounded-xl text-xs font-semibold text-text-contrast text-left transition-all focus:outline-none focus:border-accent active:scale-99 shadow-xs"
+      >
+        <span className="truncate">{selectedOption?.label}</span>
+        <ChevronDown className={cn("w-4 h-4 text-text-muted transition-transform duration-200 shrink-0", isOpen && "rotate-180")} />
+      </button>
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            className="absolute z-50 left-0 right-0 mt-1.5 max-h-56 overflow-y-auto bg-white dark:bg-bg-side border border-border-main/85 rounded-xl shadow-[0_8px_24px_rgba(0,0,0,0.06)] py-1.5 custom-scrollbar"
+          >
+            {options.map((opt) => {
+              const isSelected = opt.value === value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => {
+                    onChange(opt.value);
+                    setIsOpen(false);
+                  }}
+                  className={cn(
+                    "w-full text-left px-4 py-2.5 text-xs font-semibold transition-all hover:bg-neutral-50 dark:hover:bg-white/5",
+                    isSelected ? "text-accent bg-[#FFF5F5] dark:bg-accent/10" : "text-text-main"
+                  )}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+interface InteractiveFieldPickerProps {
+  value: string | number | undefined;
+  onChange: (val: any) => void;
+  options: CustomOption[];
+  placeholder?: string;
+}
+
+function InteractiveFieldPicker({ value, onChange, options, placeholder }: InteractiveFieldPickerProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedOption = options.find(o => o.value === value);
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutside = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, []);
+
+  return (
+    <div className="relative w-full" ref={pickerRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between bg-bg-card hover:bg-neutral-50/50 dark:hover:bg-white/5 border border-border-main/80 hover:border-[#B91C1C]/40 py-3 px-3.5 rounded-xl text-xs font-semibold text-text-contrast text-left transition-all focus:outline-none focus:border-[#B91C1C] active:scale-[0.99] shadow-inner-sm cursor-pointer"
+      >
+        <span className={cn("truncate", !selectedOption && "text-text-muted font-normal")}>
+          {selectedOption ? selectedOption.label : placeholder}
+        </span>
+        <ChevronDown className={cn("w-4 h-4 text-text-muted transition-transform duration-200 shrink-0", isOpen && "rotate-180")} />
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 4 }}
+            className="absolute z-50 left-0 right-0 mt-2 max-h-56 overflow-y-auto bg-white dark:bg-bg-side border border-border-main rounded-xl shadow-xl py-1 px-1.5 custom-scrollbar"
+          >
+            {options.map((opt) => {
+              const isSelected = opt.value === value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => {
+                    onChange(opt.value);
+                    setIsOpen(false);
+                  }}
+                  className={cn(
+                    "w-full text-left px-3.5 py-2.5 my-0.5 text-xs font-semibold rounded-lg transition-all hover:bg-neutral-50 dark:hover:bg-white/5 flex items-center justify-between cursor-pointer",
+                    isSelected ? "text-[#B91C1C] bg-[#FFF5F5] dark:bg-[#B91C1C]/10" : "text-text-main"
+                  )}
+                >
+                  <span>{opt.label}</span>
+                  {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-[#B91C1C]" />}
+                </button>
+              );
+            })}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 export default function App() {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [step, setStep] = useState(1);
+  const [slideDirection, setSlideDirection] = useState<'forward' | 'backward'>('forward');
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<FiqhAnalysisResult | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -285,6 +429,7 @@ export default function App() {
       };
       const res = await analyzeFiqh(data);
       setResult(res);
+      setSlideDirection('forward');
       setStep(5);
     } catch (error: any) {
       console.error(error);
@@ -312,13 +457,19 @@ export default function App() {
 
   const handleNext = () => {
     const nextStep = allSteps.find(s => s.id > step && !s.hideFor?.includes(experience));
-    if (nextStep) setStep(nextStep.id);
+    if (nextStep) {
+      setSlideDirection('forward');
+      setStep(nextStep.id);
+    }
   };
 
   const handleBack = () => {
     const prevSteps = allSteps.filter(s => s.id < step && !s.hideFor?.includes(experience));
     const prevStep = prevSteps[prevSteps.length - 1];
-    if (prevStep) setStep(prevStep.id);
+    if (prevStep) {
+      setSlideDirection('backward');
+      setStep(prevStep.id);
+    }
   };
 
   const renderWizardProgress = () => {
@@ -329,31 +480,38 @@ export default function App() {
     const totalStepsCount = filteredSteps.length;
     
     return (
-      <div className="border-b border-border-main/50 bg-bg-side px-6 py-4 flex items-center justify-between gap-4 shadow-[0_1px_4px_rgba(0,0,0,0.02)] animate-in fade-in duration-300">
-        <div className="flex items-center gap-3">
-          <span className="text-[11px] font-bold text-text-muted tracking-tight">Progres Analisis Fiqih</span>
-          <div className="flex items-center gap-1.5">
+      <div className="border-b border-border-main/40 bg-bg-side px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-[0_2px_12px_rgba(0,0,0,0.02)] animate-in fade-in duration-300">
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <span className="text-[12px] font-bold text-text-muted tracking-tight font-display shrink-0">Progres Langkah</span>
+          <div className="flex-1 sm:w-48 flex gap-1.5 h-1.5 bg-neutral-100 dark:bg-zinc-800 rounded-full overflow-hidden p-0">
             {Array.from({ length: totalStepsCount }).map((_, idx) => {
-              const sObj = filteredSteps[idx];
+              const isActive = idx <= currentIdx;
               const isCurrent = idx === currentIdx;
-              const isPassed = idx < currentIdx;
+              const sObj = filteredSteps[idx];
               return (
-                <div 
+                <button
                   key={idx} 
-                  className={cn(
-                    "h-2 rounded-full transition-all duration-300 cursor-pointer",
-                    isCurrent ? "w-8 bg-accent" : (isPassed ? "w-4 bg-accent/60" : "w-2 bg-border-main")
-                  )}
-                  onClick={() => sObj && setStep(sObj.id)}
+                  type="button"
+                  onClick={() => {
+                    if (sObj && sObj.id !== step) {
+                      setSlideDirection(sObj.id > step ? 'forward' : 'backward');
+                      setStep(sObj.id);
+                    }
+                  }}
                   title={sObj?.name}
+                  className={cn(
+                    "h-full flex-1 rounded-full transition-all duration-300 cursor-pointer first:rounded-l-full last:rounded-r-full",
+                    isCurrent ? "bg-accent scale-x-102" :
+                    isActive ? "bg-accent/75" : "bg-neutral-200 dark:bg-zinc-700"
+                  )}
                 />
               );
             })}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-bold text-accent bg-[#FFF5F5] dark:bg-accent/10 border border-accent/20 px-3 py-1 rounded-full shadow-xs">
-            {allSteps.find(s => s.id === step)?.name}
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <span className="text-[11px] font-bold text-accent bg-[#FFF5F5] dark:bg-accent/15 border border-accent/20 px-3.5 py-1 rounded-full shadow-xs">
+            {allSteps.find(s => s.id === step)?.name} (Langkah {currentIdx + 1} dari {totalStepsCount})
           </span>
         </div>
       </div>
@@ -449,7 +607,10 @@ export default function App() {
             <button 
               key={s.id} 
               onClick={() => {
-                setStep(s.id);
+                if (s.id !== step) {
+                  setSlideDirection(s.id > step ? 'forward' : 'backward');
+                  setStep(s.id);
+                }
                 setIsSidebarOpen(false);
               }}
               className={cn(
@@ -696,37 +857,6 @@ export default function App() {
             </button>
           </div>
         </div>
-
-        {/* Ramadhan Toggle (Full Width di bawah) */}
-        <div className="pt-4 border-t border-border-main/50">
-          <button 
-            type="button"
-            onClick={() => setIsRamadhan(!isRamadhan)}
-            className={cn(
-              "w-full flex items-center justify-between p-5 rounded-2xl border transition-all cursor-pointer shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:scale-[0.98] duration-300",
-              isRamadhan 
-                ? "bg-[#FFF5F5] dark:bg-accent/15 border-[#B91C1C] text-text-contrast" 
-                : "bg-bg-card border-border-main text-text-contrast hover:border-accent/30"
-            )}
-          >
-            <div className="flex items-center gap-3">
-              <Target className={cn("w-5 h-5", isRamadhan ? "text-accent" : "text-text-muted")} />
-              <div className="text-left">
-                <div className="text-xs font-semibold tracking-wide">Kejadian di Bulan Ramadan</div>
-                <div className="text-[11px] text-text-muted mt-1 leading-normal">Aktifkan jika pendarahan bertepatan dengan puasa fardhu</div>
-              </div>
-            </div>
-            <div className={cn(
-              "w-10 h-5 rounded-full relative transition-colors duration-200",
-              isRamadhan ? "bg-[#B91C1C]" : "bg-neutral-300 dark:bg-neutral-700"
-            )}>
-              <div className={cn(
-                "absolute top-1 w-3 h-3 bg-white rounded-full transition-transform duration-200",
-                isRamadhan ? "translate-x-6" : "translate-x-1"
-              )} />
-            </div>
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -866,10 +996,10 @@ export default function App() {
                   className={cn(
                     "w-10 h-10 rounded-full flex items-center justify-center text-xs font-semibold focus:outline-none transition-all cursor-pointer relative",
                     !isCurrentMonth 
-                      ? "opacity-25 bg-transparent text-text-muted pointer-events-none" 
-                      : (isBetween ? "bg-[#FFF5F5] dark:bg-accent/15 text-accent font-bold" : "bg-[#FAFAFA] hover:bg-neutral-100 dark:bg-zinc-800 text-text-main"),
-                    isTodayDate && !record && "border border-accent text-accent font-bold",
-                    record && "shadow-md scale-102 font-black text-white",
+                      ? "text-[#D1D5DB] bg-transparent pointer-events-none" 
+                      : (isBetween ? "bg-[#FFE4E6] text-[#B91C1C] font-bold" : "bg-transparent text-[#6B7280] hover:text-[#B91C1C] hover:bg-[#FEE2E2]"),
+                    isTodayDate && !record && "border border-[#B91C1C] text-[#B91C1C] bg-transparent font-bold",
+                    record && "shadow-md scale-102 font-black text-white bg-[#B91C1C]",
                     isLaborDay && "bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/30",
                     isAnchor && "ring-4 ring-accent/40 ring-offset-2 ring-offset-bg-card"
                   )}
@@ -879,7 +1009,7 @@ export default function App() {
                     record.color === 'coklat' ? { backgroundColor: '#78350f', color: '#ffffff' } :
                     record.color === 'kuning' ? { backgroundColor: '#eab308', color: '#111827' } :
                     record.color === 'keruh' ? { backgroundColor: '#64748b', color: '#ffffff' } :
-                    { backgroundColor: 'var(--color-accent)', color: '#ffffff' }
+                    { backgroundColor: '#B91C1C', color: '#ffffff' }
                   ) : undefined}
                 >
                   <span className="z-10">{format(d, 'd')}</span>
@@ -922,116 +1052,190 @@ export default function App() {
           </p>
         </div>
 
-        {selectedDate && activeRecord && (
-          <motion.div 
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="p-6 bg-bg-card rounded-2xl border border-border-main space-y-6 shadow-[0_4px_16px_rgba(0,0,0,0.04)]"
+        {/* Pilihan Kejadian di Bulan Ramadhan */}
+        <div className="pt-2">
+          <button 
+            type="button"
+            onClick={() => setIsRamadhan(!isRamadhan)}
+            className={cn(
+              "w-full flex items-center justify-between p-5 rounded-2xl border transition-all cursor-pointer shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:scale-[0.985] duration-300",
+              isRamadhan 
+                ? "bg-[#FFF5F5] dark:bg-[#B91C1C]/10 border-[#B91C1C]/60 text-text-contrast" 
+                : "bg-bg-card border-border-main text-text-contrast hover:border-[#B91C1C]/30"
+            )}
           >
-            <div className="flex justify-between items-center border-b border-border-main/50 pb-4">
-              <h3 className="text-sm font-bold text-accent font-display">
-                Karakteristik Darah: {format(selectedDate, 'd MMMM yyyy', { locale: id })}
-              </h3>
-              <button 
-                type="button"
-                onClick={() => setSelectedDate(null)} 
-                className="text-xs font-semibold text-text-muted hover:text-accent cursor-pointer transition-colors"
-              >
-                Tutup
-              </button>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-text-main">Warna (Hierarki Tamyiz)</label>
-                <div className="relative">
-                  <select 
-                    className="w-full bg-bg-main border border-border-main/80 p-3 rounded-xl text-xs text-text-contrast font-semibold focus:outline-none focus:border-accent"
-                    value={activeRecord?.color}
-                    onChange={(e) => updateDayRecord(selectedDate, { color: e.target.value as BloodColor })}
-                  >
-                    <option value="hitam" className="text-text-contrast bg-bg-card">Hitam (Paling Kuat)</option>
-                    <option value="merah" className="text-text-contrast bg-bg-card">Merah</option>
-                    <option value="coklat" className="text-text-contrast bg-bg-card">Coklat</option>
-                    <option value="kuning" className="text-text-contrast bg-bg-card">Kuning</option>
-                    <option value="keruh" className="text-text-contrast bg-bg-card">Keruh (Paling Lemah)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-text-main">Tekstur Darah</label>
-                <div className="relative">
-                  <select 
-                    className="w-full bg-bg-main border border-border-main/80 p-3 rounded-xl text-xs text-text-contrast font-semibold focus:outline-none focus:border-accent"
-                    value={activeRecord?.texture}
-                    onChange={(e) => updateDayRecord(selectedDate, { texture: e.target.value as BloodTexture })}
-                  >
-                    <option value="kental" className="text-text-contrast bg-bg-card">Kental (Lebih Kuat)</option>
-                    <option value="cair" className="text-text-contrast bg-bg-card">Cair</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-text-main">Aroma Darah</label>
-                <div className="relative">
-                  <select 
-                    className="w-full bg-bg-main border border-border-main/80 p-3 rounded-xl text-xs text-text-contrast font-semibold focus:outline-none focus:border-accent"
-                    value={activeRecord?.aroma}
-                    onChange={(e) => updateDayRecord(selectedDate, { aroma: e.target.value as BloodAroma })}
-                  >
-                    <option value="busuk" className="text-text-contrast bg-bg-card">Sangat Busuk (Kuat)</option>
-                    <option value="tidak_busuk" className="text-text-contrast bg-bg-card">Tidak Beraroma</option>
-                  </select>
-                </div>
+            <div className="flex items-center gap-3">
+              <Target className={cn("w-5 h-5", isRamadhan ? "text-[#B91C1C]" : "text-text-muted")} />
+              <div className="text-left">
+                <div className="text-xs font-bold font-display tracking-wide text-text-contrast">Kejadian di Bulan Ramadan</div>
+                <div className="text-[11px] text-text-muted mt-1 leading-normal font-semibold font-sans">Aktifkan jika siklus pendarahan Anda bertepatan dengan puasa fardhu Ramadan</div>
               </div>
             </div>
-
-            <div className="pt-5 border-t border-border-main/50 space-y-4">
-              <div className="flex items-center gap-2 mb-1">
-                <Clock className="w-4 h-4 text-accent" />
-                <h4 className="text-xs font-bold text-text-contrast font-display">
-                  Durasi Mengeluarkan Darah Hari Ini
-                </h4>
-              </div>
-              <p className="text-xs text-text-muted leading-relaxed font-medium">
-                Sebutkan jumlah jam pendarahan pada tanggal ini jika pendarahan terputus-putus atau kurang dari seharian penuh.
-              </p>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-text-main">Jumlah Jam</label>
-                  <select 
-                    className="w-full bg-bg-main border border-border-main/80 p-3 rounded-xl text-xs text-text-contrast font-semibold focus:outline-none focus:border-accent"
-                    value={activeRecord?.durationHours !== undefined ? activeRecord.durationHours : 24}
-                    onChange={(e) => updateDayRecord(selectedDate, { durationHours: Number(e.target.value) })}
-                  >
-                    {Array.from({ length: 25 }, (_, i) => (
-                      <option key={i} value={i} className="text-text-contrast bg-bg-card">
-                        {i} Jam {i === 24 ? "(Standar 24 Jam Penuh)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-text-main">Jumlah Menit</label>
-                  <select 
-                    className="w-full bg-bg-main border border-border-main/80 p-3 rounded-xl text-xs text-text-contrast font-semibold focus:outline-none focus:border-accent"
-                    value={activeRecord?.durationMinutes !== undefined ? activeRecord.durationMinutes : 0}
-                    onChange={(e) => updateDayRecord(selectedDate, { durationMinutes: Number(e.target.value) })}
-                  >
-                    {Array.from({ length: 60 }, (_, i) => (
-                      <option key={i} value={i} className="text-text-contrast bg-bg-card">
-                        {i} Menit
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+            <div className={cn(
+              "w-10 h-5 rounded-full relative transition-colors duration-200 shrink-0",
+              isRamadhan ? "bg-[#B91C1C]" : "bg-neutral-300 dark:bg-neutral-700"
+            )}>
+              <div className={cn(
+                "absolute top-1 w-3 h-3 bg-white rounded-full transition-transform duration-200",
+                isRamadhan ? "translate-x-6" : "translate-x-1"
+              )} />
             </div>
-          </motion.div>
+          </button>
+        </div>
+
+        {selectedDate && activeRecord && (
+          <>
+            {/* Backdrop Overlay */}
+            <div 
+              className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs transition-opacity duration-300 pointer-events-auto"
+              onClick={() => setSelectedDate(null)}
+            />
+
+            {/* Bottom Sheet Panel */}
+            <motion.div 
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 220 }}
+              className="fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-bg-side rounded-t-3xl border-t border-border-main flex flex-col pointer-events-auto shadow-[0_-8px_32px_rgba(0,0,0,0.15)] overflow-hidden"
+              style={{ height: "65dvh" }}
+            >
+              {/* Handle Bar & Drag area with clean labels */}
+              <div className="flex-shrink-0 px-6 py-4.5 border-b border-border-main/50 flex items-center justify-between bg-bg-card">
+                <div className="flex flex-col">
+                  <div className="w-10 h-1 bg-border-main/70 rounded-full mb-3" />
+                  <h3 className="text-xs font-black text-[#B91C1C] uppercase tracking-widest font-display">
+                    Karakteristik Darah
+                  </h3>
+                  <p className="text-[10px] text-text-muted font-bold font-sans mt-0.5">
+                    Tanggal: {format(selectedDate, 'EEEE, d MMMM yyyy', { locale: id })}
+                  </p>
+                </div>
+                <button 
+                  type="button"
+                  onClick={() => setSelectedDate(null)} 
+                  className="p-2 hover:bg-neutral-100 dark:hover:bg-white/5 text-text-muted hover:text-[#B91C1C] rounded-full transition-colors cursor-pointer flex items-center justify-center shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Scrollable contents flow */}
+              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6 custom-scrollbar min-h-0 bg-bg-main/20">
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-text-muted uppercase tracking-wider font-display">
+                      Warna (Hierarki Tamyiz)
+                    </label>
+                    <InteractiveFieldPicker 
+                      value={activeRecord?.color}
+                      onChange={(val) => updateDayRecord(selectedDate, { color: val as BloodColor })}
+                      options={[
+                        { value: 'hitam', label: 'Hitam (Paling Kuat)' },
+                        { value: 'merah', label: 'Merah' },
+                        { value: 'coklat', label: 'Coklat' },
+                        { value: 'kuning', label: 'Kuning' },
+                        { value: 'keruh', label: 'Keruh (Paling Lemah)' }
+                      ]}
+                      placeholder="Pilih warna darah..."
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-text-muted uppercase tracking-wider font-display">
+                      Tekstur Darah
+                    </label>
+                    <InteractiveFieldPicker 
+                      value={activeRecord?.texture}
+                      onChange={(val) => updateDayRecord(selectedDate, { texture: val as BloodTexture })}
+                      options={[
+                        { value: 'kental', label: 'Kental (Lebih Kuat)' },
+                        { value: 'cair', label: 'Cair' }
+                      ]}
+                      placeholder="Pilih tekstur darah..."
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-text-muted uppercase tracking-wider font-display">
+                      Aroma Darah
+                    </label>
+                    <InteractiveFieldPicker 
+                      value={activeRecord?.aroma}
+                      onChange={(val) => updateDayRecord(selectedDate, { aroma: val as BloodAroma })}
+                      options={[
+                        { value: 'busuk', label: 'Sangat Busuk (Kuat)' },
+                        { value: 'tidak_busuk', label: 'Tidak Beraroma' }
+                      ]}
+                      placeholder="Pilih aroma darah..."
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-6 border-t border-border-main/50 space-y-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Clock className="w-4 h-4 text-[#B91C1C]" />
+                    <h4 className="text-[11px] font-black text-text-contrast uppercase tracking-wide font-display">
+                      Durasi Mengeluarkan Darah Hari Ini
+                    </h4>
+                  </div>
+                  <p className="text-[10px] text-text-muted leading-relaxed font-semibold">
+                    Rentang waktu keluarnya darah pada tanggal ini untuk kalkulasi total jam.
+                  </p>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-text-muted uppercase tracking-wider font-display">
+                        Jumlah Jam
+                      </label>
+                      <InteractiveFieldPicker 
+                        value={activeRecord?.durationHours !== undefined ? activeRecord.durationHours : 24}
+                        onChange={(val) => updateDayRecord(selectedDate, { durationHours: Number(val) })}
+                        options={Array.from({ length: 25 }, (_, i) => ({
+                          value: i,
+                          label: `${i} Jam ${i === 24 ? "(Standar 24 Jam Penuh)" : ""}`
+                        }))}
+                        placeholder="Pilih jam..."
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-text-muted uppercase tracking-wider font-display">
+                        Jumlah Menit
+                      </label>
+                      <InteractiveFieldPicker 
+                        value={activeRecord?.durationMinutes !== undefined ? activeRecord.durationMinutes : 0}
+                        onChange={(val) => updateDayRecord(selectedDate, { durationMinutes: Number(val) })}
+                        options={Array.from({ length: 60 }, (_, i) => ({
+                          value: i,
+                          label: `${i} Menit`
+                        }))}
+                        placeholder="Pilih menit..."
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons sticky at the base */}
+              <div className="flex-shrink-0 p-5 border-t border-border-main/50 bg-bg-card flex gap-3 pb-safe">
+                <button 
+                  type="button"
+                  onClick={() => setSelectedDate(null)}
+                  className="flex-1 py-3 px-4 border border-border-main text-text-contrast rounded-xl text-xs font-bold hover:bg-neutral-50 dark:hover:bg-white/5 active:scale-95 transition-all cursor-pointer text-center"
+                >
+                  Batal
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setSelectedDate(null)}
+                  className="flex-1 py-3 px-4 bg-[#B91C1C] hover:bg-red-700 text-white rounded-xl text-xs font-bold active:scale-95 transition-all cursor-pointer text-center"
+                >
+                  Simpan
+                </button>
+              </div>
+            </motion.div>
+          </>
         )}
       </div>
     );
@@ -2027,7 +2231,7 @@ export default function App() {
       </div>
 
       <button 
-        onClick={() => { setStep(1); setResult(null); setRecords([]); setIsDetailOpen(false); setIsTimelineOpen(false); setIsQodloOpen(false); }}
+        onClick={() => { setSlideDirection('backward'); setStep(1); setResult(null); setRecords([]); setIsDetailOpen(false); setIsTimelineOpen(false); setIsQodloOpen(false); }}
         className="w-full py-4.5 bg-white dark:bg-bg-side border border-border-main text-text-contrast rounded-full text-xs font-bold hover:border-accent hover:bg-[#FFF5F5] dark:hover:bg-white/5 transition-all flex items-center justify-center gap-3 shadow-sm active:scale-[0.98] cursor-pointer"
       >
         <RefreshCw className="w-4.5 h-4.5 animate-spin-slow" /> Mulai Analisis Baru
@@ -2035,35 +2239,107 @@ export default function App() {
     </div>
   );
 
-  return (
-    <div className="h-screen w-full bg-bg-main text-text-main font-sans flex flex-col md:flex-row overflow-hidden">
-      {/* MOBILE HEADER */}
-      <header className="md:hidden h-16 border-b border-border-main flex items-center justify-between px-6 bg-bg-side z-50">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-display font-black text-accent tracking-tight">Al-Kautsar</h1>
-        </div>
-        <button 
-          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-          className="p-2 text-slate-400 hover:text-text-contrast"
-        >
-          {isSidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-        </button>
-      </header>
+  const renderActiveStep = () => {
+    const initialX = slideDirection === 'forward' ? "100%" : "-100%";
+    const exitX = slideDirection === 'forward' ? "-100%" : "100%";
 
-      {/* LEFT SIDEBAR (Adaptive) */}
+    const renderHalamanWrapper = (content: React.ReactNode, title: string, description: string | undefined, stepNum: number, showBottomNav = true) => {
+      return (
+        <motion.div
+          key={stepNum}
+          initial={{ x: initialX }}
+          animate={{ x: 0 }}
+          exit={{ x: exitX }}
+          transition={{ duration: 0.25, ease: "easeInOut" }}
+          className="halaman bg-bg-main"
+        >
+          <div className="halaman-header">
+            <Header 
+              onMenuClick={() => setIsSidebarOpen(true)}
+              title={title}
+              description={description}
+              showBack={stepNum > 1}
+              step={stepNum <= 4 ? stepNum : undefined}
+              totalSteps={4}
+            >
+              <button 
+                type="button"
+                onClick={toggleTheme}
+                className="p-1 px-[5px] border border-border-main text-slate-500 hover:text-text-contrast rounded hover:bg-bg-card transition-colors cursor-pointer"
+              >
+                {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+              </button>
+
+              {stepNum === 5 && (
+                <button 
+                  type="button"
+                  className="px-3 py-1 bg-accent/10 text-accent border border-accent/20 text-[9px] uppercase font-bold tracking-widest rounded flex items-center gap-1.5 cursor-pointer ml-1"
+                  onClick={() => window.print()}
+                >
+                  <Save className="w-3 h-3" /> <span className="hidden sm:inline">PDF</span>
+                </button>
+              )}
+            </Header>
+          </div>
+
+          <div className="halaman-konten custom-scrollbar min-h-0">
+            <div className="max-w-4xl mx-auto w-full md:px-4">
+              {content}
+            </div>
+          </div>
+
+          {showBottomNav && (
+            <div className="halaman-footer">
+              {renderStickyBottomNav()}
+            </div>
+          )}
+        </motion.div>
+      );
+    };
+
+    if (step === 1) return renderHalamanWrapper(renderStep1Redesign(), "Profil Dasar", "Masukkan data tanggal lahir, kondisi & status pengalaman", 1, true);
+    if (step === 2) return renderHalamanWrapper(renderStep5Redesign(), "Kalender Darah", "Tandai hari-hari mengeluarkan darah dalam sebulan", 2, true);
+    if (step === 3) return renderHalamanWrapper(renderStep3(), "Riwayat Adat", "Atur ingatan kebiasaan siklus", 3, true);
+    if (step === 4) return renderHalamanWrapper(renderStep4Redesign(), "Konteks Waktu", "Detail waktu keluar & berhenti darah", 4, true);
+    if (step === 5) return renderHalamanWrapper(renderResult(), "Hasil Analisis", "Output kesimpulan hukum & kewajiban qodho", 5, false);
+    return null;
+  };
+
+  return (
+    <div className="app-wrapper h-screen w-full bg-bg-main text-text-main font-sans flex flex-col overflow-hidden">
+      {/* LEFT SIDEBAR (Adaptive Drawer) */}
       <aside className={cn(
-        "fixed inset-0 z-40 md:relative md:flex md:w-72 border-r border-border-main flex flex-col h-full bg-bg-side transition-transform duration-300 md:translate-x-0",
+        "fixed inset-y-0 left-0 z-50 w-72 border-r border-border-main flex flex-col h-full bg-bg-side transition-transform duration-300 shadow-2xl",
         isSidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
-        <div className="p-8 border-b border-border-main hidden md:block">
-          <h1 className="text-3xl font-display font-black text-accent tracking-normal">Al-Kautsar</h1>
-          <p className="text-[10px] uppercase tracking-[0.25em] text-text-muted font-bold mt-1">Fiqh Darah AI</p>
+        <div className="p-8 border-b border-border-main flex flex-col justify-between shrink-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <img 
+                src="/logo.png" 
+                alt="Al-Kautsar Logo" 
+                className="w-11 h-11 rounded-2xl object-cover border border-[#B91C1C]/25 shadow-md shrink-0" 
+                referrerPolicy="no-referrer" 
+              />
+              <div>
+                <h1 className="text-xl font-display font-black text-accent tracking-normal leading-tight">Al-Kautsar</h1>
+                <p className="text-[9px] tracking-[0.08em] text-text-muted font-black uppercase mt-0.5 font-display">Fiqh Darah AI</p>
+              </div>
+            </div>
+            <button 
+              type="button"
+              onClick={() => setIsSidebarOpen(false)}
+              className="p-2 -mr-2 text-text-muted hover:text-accent hover:bg-bg-bottom border border-border-main/35 rounded-full transition-all cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto flex flex-col custom-scrollbar">
           <nav className="flex-1 px-8 py-10 space-y-8">
-            <div className="md:hidden mb-8 border-b border-border-main pb-4">
-               <p className="text-xs uppercase tracking-[0.3em] text-slate-500 font-black opacity-70">Navigation</p>
+            <div className="mb-4 border-b border-border-main pb-4">
+               <p className="text-xs text-slate-500 font-bold font-display opacity-85">Menu Utama</p>
             </div>
             
             {!location.pathname.startsWith('/articles') && renderStepNav()}
@@ -2077,7 +2353,7 @@ export default function App() {
               )}
             >
               <FileText className="w-5 h-5" />
-              <span className="text-xs font-semibold uppercase tracking-wider">Artikel Fiqh</span>
+              <span className="text-xs font-semibold tracking-wide font-display">Artikel Fiqh</span>
             </Link>
 
             <div className="mt-auto">
@@ -2085,18 +2361,20 @@ export default function App() {
             </div>
 
             <div className="pt-10 border-t border-border-main space-y-6">
-              <div className="text-xs text-slate-500 uppercase font-black tracking-widest">Live Profile</div>
+              <div className="text-xs text-text-muted font-bold tracking-wide font-display">Profil Real-time</div>
               <div className="grid grid-cols-1 gap-3">
-                <div className="bg-bg-card p-3 rounded border border-border-main/50">
-                  <div className="text-[9px] text-slate-500 uppercase font-bold mb-1">Context</div>
-                  <div className="text-[10px] font-mono text-text-contrast flex justify-between items-center">
-                    <span>{context.toUpperCase()}</span>
-                    <div className={cn("w-1.5 h-1.5 rounded-full animate-pulse", context === 'haid' ? "bg-red-500" : "bg-purple-500")} />
+                <div className="bg-bg-card p-3 rounded-xl border border-border-main/50">
+                  <div className="text-[10px] text-text-muted font-semibold font-display mb-1">Konteks</div>
+                  <div className="text-[11px] text-text-contrast flex justify-between items-center font-medium">
+                    <span>{context === 'haid' ? 'Haid' : context === 'nifas' ? 'Nifas' : '-'}</span>
+                    <div className={cn("w-1.5 h-1.5 rounded-full", context === 'haid' ? "bg-red-500 animate-pulse" : context === 'nifas' ? "bg-purple-500 animate-pulse" : "bg-neutral-300")} />
                   </div>
                 </div>
-                <div className="bg-bg-card p-3 rounded border border-border-main/50">
-                  <div className="text-[9px] text-slate-500 uppercase font-bold mb-1">Experience</div>
-                  <div className="text-[10px] font-mono text-text-contrast truncate">{experience.toUpperCase()}</div>
+                <div className="bg-bg-card p-3 rounded-xl border border-border-main/50">
+                  <div className="text-[10px] text-text-muted font-semibold font-display mb-1">Status Pengalaman</div>
+                  <div className="text-[11px] text-text-contrast font-medium truncate">
+                    {experience === 'mubtadiah' ? 'Mubtadi\'ah' : experience === 'mutadah' ? 'Mu\'tadah' : '-'}
+                  </div>
                 </div>
               </div>
             </div>
@@ -2105,60 +2383,65 @@ export default function App() {
           <div className="p-8 bg-bg-bottom border-t border-border-main">
             <div className="flex items-center gap-2 mb-3">
               <div className="w-2 h-2 rounded-full bg-accent" />
-              <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Mazhab Syafi'i</span>
+              <span className="text-xs text-text-contrast tracking-wide font-bold font-display">Mazhab Syafi'i</span>
             </div>
-            <p className="text-[9px] leading-relaxed italic text-slate-500 font-serif opacity-80 uppercase tracking-tighter">
+            <p className="text-[10px] leading-relaxed italic text-text-muted font-serif opacity-80">
               Uyunul Masa-il Linnisa & Panduan Tamyiz Terpadu
             </p>
             
             {/* PWA offline tip */}
             <div className="mt-4 pt-4 border-t border-border-main/50">
-              <div className="flex items-center gap-1.5 text-[9px] text-teal-400 uppercase font-mono tracking-wider mb-1 font-bold">
-                <Sparkles size={11} className="text-teal-400" />
+              <div className="flex items-center gap-1.5 text-[10px] text-teal-600 dark:text-teal-400 tracking-wide mb-1 font-bold">
+                <Sparkles size={11} className="text-teal-500" />
                 <span>PWA Offline Aktif</span>
               </div>
-              <p className="text-[9px] text-slate-400 leading-normal">
+              <p className="text-[10px] text-text-muted leading-relaxed">
                 Dapat diinstal di Layar Utama HP / Desktop Anda dan digunakan 100% tanpa internet (Offline).
               </p>
             </div>
           </div>
         </div>
 
-        {/* Close overlay for mobile */}
-        {isSidebarOpen && (
-          <div 
-            className="md:hidden absolute inset-0 -z-10 bg-black/60 backdrop-blur-sm"
-            onClick={() => setIsSidebarOpen(false)}
-          />
-        )}
       </aside>
+
+      {/* Backdrop overlay for sidebar drawer */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs transition-opacity duration-300"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
 
       {/* MAIN INTERACTION AREA */}
       <main className="flex-1 flex flex-col overflow-hidden bg-bg-main relative">
-        <Header 
-          onMenuClick={() => setIsSidebarOpen(true)}
-          title={location.pathname.startsWith('/articles') ? 'Artikel Fiqh' : currentStep.name}
-          description={!location.pathname.startsWith('/articles') ? currentStep.description : undefined}
-          showBack={location.pathname !== '/'}
-        >
-          <button 
-              type="button"
-              onClick={toggleTheme}
-              className="p-2 md:p-2.5 border border-border-main text-slate-500 hover:text-text-contrast rounded hover:bg-bg-card transition-colors cursor-pointer"
-            >
-              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
-
-            {step === 5 && !location.pathname.startsWith('/articles') && (
-              <button 
+        {location.pathname !== '/' && (
+          <Header 
+            onMenuClick={() => setIsSidebarOpen(true)}
+            title={location.pathname.startsWith('/articles') ? 'Artikel Fiqh' : currentStep.name}
+            description={!location.pathname.startsWith('/articles') ? currentStep.description : undefined}
+            showBack={location.pathname !== '/'}
+            step={location.pathname.startsWith('/articles') ? undefined : (step <= 4 ? step : undefined)}
+            totalSteps={4}
+          >
+            <button 
                 type="button"
-                className="px-4 md:px-6 py-2 md:py-2.5 bg-accent/10 text-accent border border-accent/30 text-[9px] md:text-[10px] uppercase font-bold tracking-widest rounded flex items-center gap-2 cursor-pointer"
-                onClick={() => window.print()}
+                onClick={toggleTheme}
+                className="p-2 md:p-2.5 border border-border-main text-slate-500 hover:text-text-contrast rounded hover:bg-bg-card transition-colors cursor-pointer"
               >
-                <Save className="w-3 h-3" /> <span className="hidden sm:inline">PDF</span>
+                {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
               </button>
-            )}
-        </Header>
+
+              {step === 5 && !location.pathname.startsWith('/articles') && (
+                <button 
+                  type="button"
+                  className="px-4 md:px-6 py-2 md:py-2.5 bg-accent/10 text-accent border border-accent/30 text-[9px] md:text-[10px] uppercase font-bold tracking-widest rounded flex items-center gap-2 cursor-pointer"
+                  onClick={() => window.print()}
+                >
+                  <Save className="w-3 h-3" /> <span className="hidden sm:inline">PDF</span>
+                </button>
+              )}
+          </Header>
+        )}
 
         <Routes>
           <Route path="/articles" element={<div className="flex-1 overflow-y-auto p-6 md:p-12 custom-scrollbar"><ArticleList /></div>} />
@@ -2167,39 +2450,17 @@ export default function App() {
           <Route path="/articles/edit/:id" element={<div className="flex-1 overflow-y-auto p-6 md:p-12 custom-scrollbar"><ArticleEditor /></div>} />
           
           <Route path="/" element={
-            <div className="flex-1 flex flex-col h-full overflow-hidden">
-              {/* PROGRESS BAR */}
-              {renderWizardProgress()}
-
-              {/* SCROLLABLE INNER SECTION */}
-              <div className="flex-1 overflow-y-auto p-6 md:p-12 custom-scrollbar">
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={step}
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
-                    transition={{ duration: 0.3, ease: "easeOut" }}
-                    className="max-w-4xl mx-auto"
-                  >
-                    {step === 1 && renderStep1Redesign()}
-                    {step === 2 && renderStep5Redesign()}
-                    {step === 3 && renderStep3()}
-                    {step === 4 && renderStep4Redesign()}
-                    {step === 5 && renderResult()}
-                  </motion.div>
-                </AnimatePresence>
-              </div>
-
-              {/* STICKY FOOTER NAVIGATION */}
-              {step < 5 && renderStickyBottomNav()}
+            <div className="flex-1 w-full h-full min-h-0 overflow-hidden relative">
+              <AnimatePresence mode="wait" initial={false}>
+                {renderActiveStep()}
+              </AnimatePresence>
             </div>
           } />
         </Routes>
       </main>
 
       {/* RIGHT PANEL - Adaptive (Bottom or Sidebar) */}
-      {step < 5 && (
+      {step < 5 && false && (
         <aside className="w-80 border-l border-border-main bg-bg-side flex flex-col hidden lg:flex overflow-hidden">
           <div className="p-8 border-b border-border-main bg-bg-main/30">
             <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-6">Status Real-time</h3>
