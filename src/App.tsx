@@ -52,7 +52,6 @@ import {
 } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { cn } from './lib/utils';
-import logoImg from './assets/logo.png';
 import { checkIfMumayyizah, countUniqueBloodAttributes } from './services/localAnalyzer';
 import { 
   CalculationContext, 
@@ -2317,7 +2316,7 @@ export default function App() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <img 
-                src={logoImg} 
+                src="/logo.png" 
                 alt="Al-Kautsar Logo" 
                 className="w-11 h-11 rounded-2xl object-cover border border-[#B91C1C]/25 shadow-md shrink-0" 
                 referrerPolicy="no-referrer" 
