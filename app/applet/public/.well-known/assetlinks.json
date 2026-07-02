@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "app.run.asia_southeast1.kalkulator_fiqh_darah_1090034804909.twa",
+        "sha256_cert_fingerprints": ["45:7F:E0:58:76:F3:6D:16:7D:93:1E:D7:FA:EA:4F:9B:C6:CF:DE:D7:10:E7:0A:25:14:BD:CC:A4:80:79:F3:8F"]
+      }
+    }]

@@ -1,6 +1,0 @@
-{
-  "name": "Kalkulator Fiqh Darah",
-  "description": "Kalkulator hukum darah wanita (Haid, Nifas, Istihadloh) sesuai Mazhab Syafi'i dengan analisis mendalam 7 kategori Istihadloh.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
