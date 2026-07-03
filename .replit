@@ -1,0 +1,7 @@
+run = "npm run dev"
+
+[packager]
+language = "nodejs"
+
+[interpreter]
+powerUp = true
