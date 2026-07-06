@@ -1,13 +1,13 @@
 import { FiqhAnalysisRequest, FiqhAnalysisResult } from "../types";
-import { analyzeFiqhLocal } from "./localAnalyzer";
+import { runEngine } from "./engine";
+// import { analyzeFiqhLocal } from "./localAnalyzer";
 
 export async function analyzeFiqh(data: FiqhAnalysisRequest): Promise<FiqhAnalysisResult> {
-  // Seluruh analisis sekarang dilakukan secara lokal (Offline First)
-  // Tidak memerlukan Gemini API atau LLM eksternal.
   return new Promise((resolve) => {
     setTimeout(() => {
-      const result = analyzeFiqhLocal(data);
+      // Use the new rule engine!
+      const result = runEngine(data);
       resolve(result);
-    }, 800); // Simulasi pemrosesan cepat untuk UX
+    }, 800); 
   });
 }

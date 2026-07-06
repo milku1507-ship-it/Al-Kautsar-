@@ -7,6 +7,7 @@ const MAX_NIFAS_DAYS = 60;
 const MIN_PURE_DAYS = 15;
 
 import { FiqhAnalysisRequest, FiqhAnalysisResult, UserHabit, DayRecord, ExperienceStatus } from "../types";
+import { convertEventsToDayRecords } from "./eventAdapter";
 import { validateAge, parseDays, determineStatus, DayStrength, getBloodStrengthScore, calculateBloodHours } from "./fiqhEngine";
 import { parseISO, differenceInHours, differenceInDays, addDays, isSameDay, isBefore, isAfter, eachDayOfInterval, format } from "date-fns";
 import { id } from 'date-fns/locale';
@@ -2130,10 +2131,19 @@ export function evaluateMutadahIngatDurasiLupaWaktu(days: DayStrength[], habit: 
 
 export function analyzeFiqhLocal(data: FiqhAnalysisRequest): FiqhAnalysisResult {
   const { 
-    records, context, habit, experience, ageYears, ageMonths, ageDays, laborDate,
-    startTime, stopTime, hasPerformedPrayerBeforeBleeding, isRamadhan
+    events, context, habit, experience, ageYears, ageMonths, ageDays, laborDate,
+    hasPerformedPrayerBeforeBleeding
   } = data;
   
+  const records = convertEventsToDayRecords(events);
+
+  // Extract start and stop times from events for qadho calculation
+  const startEvents = events.filter(e => e.eventType === 'START_BLOOD');
+  const stopEvents = events.filter(e => e.eventType === 'STOP_BLOOD' || e.eventType === 'CLEAN_PERIOD');
+  const startTime = startEvents.length > 0 ? format(parseISO(startEvents[0].datetime), 'HH:mm') : undefined;
+  const stopTime = stopEvents.length > 0 ? format(parseISO(stopEvents[stopEvents.length - 1].datetime), 'HH:mm') : undefined;
+  const isRamadhan = false; // We can add this back to the UI if needed, for now false
+
   // 1. Validasi Awal
   if (records.length === 0) {
     return {

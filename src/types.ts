@@ -1,8 +1,18 @@
 export type BloodStatus = 'darah' | 'bersih';
-
 export type BloodColor = 'hitam' | 'merah' | 'coklat' | 'kuning' | 'keruh';
 export type BloodTexture = 'kental' | 'cair';
 export type BloodAroma = 'busuk' | 'tidak_busuk';
+
+export type EventType = 'START_BLOOD' | 'CHANGE_CHARACTERISTIC' | 'STOP_BLOOD' | 'CLEAN_PERIOD' | 'BLEED_AGAIN';
+
+export interface BloodEvent {
+  id: string;
+  datetime: string; // ISO format
+  eventType: EventType;
+  color?: BloodColor;
+  texture?: BloodTexture;
+  aroma?: BloodAroma;
+}
 
 export interface DayRecord {
   date: string; // ISO format
@@ -18,26 +28,17 @@ export type ExperienceStatus = 'mubtadiah' | 'mutadah';
 export type CalculationContext = 'haid' | 'nifas';
 
 export type HabitRetrospection = 
-  | 'ingat_semua' 
-  | 'ingat_durasi' 
-  | 'ingat_waktu' 
-  | 'lupa_semua'
-  | 'ingat_angka_lupa_urutan';
+  | 'ingat_awal_dan_durasi' 
+  | 'ingat_durasi_saja' 
+  | 'ingat_awal_saja' 
+  | 'lupa_semua';
 
 export interface UserHabit {
   retrospection: HabitRetrospection;
-  habitType?: 'TETAP' | 'BERUBAH';
-  lupaUrutan?: boolean;
-  duration?: number;
-  durations?: number[];
-  durationNifas?: number;
-  durationsNifas?: number[];
-  lastCycleStart?: string;
-  ingatWaktuBerhenti?: boolean;
-  timeRange?: number; // Rentang waktu (misal: 10 hari)
-  knownPureDay?: number; // Hari yakin suci (misal: tgl 1)
-  pernahHaid?: boolean;
-  habitSuci?: number;
+  durasiHari?: number;
+  durasiJam?: number;
+  tanggalMulai?: number; // Tanggal hijriah / masehi
+  jamMulai?: string;
 }
 
 export interface FiqhAnalysisRequest {
@@ -46,15 +47,10 @@ export interface FiqhAnalysisRequest {
   ageDays: number;
   context: CalculationContext;
   experience: ExperienceStatus;
-  records: DayRecord[];
+  events: BloodEvent[]; // NEW: uses events instead of records
   habit?: UserHabit;
-  startTime?: string; // HH:mm
-  stopTime?: string; // HH:mm
   laborDate?: string; // ISO format
-  isRamadhan?: boolean;
   hasPerformedPrayerBeforeBleeding?: boolean;
-  isFirstMonthIstihadloh?: boolean;
-  calculationMonthIndex?: number;
 }
 
 export interface FiqhAnalysisResult {
@@ -91,3 +87,4 @@ export interface FiqhAnalysisResult {
   isFirstMonth?: boolean;
   legalBasis: string;
 }
+
